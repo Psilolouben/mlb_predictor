@@ -5,8 +5,12 @@ require 'distribution'
 
 GAMES_URL = 'https://fantasydata.com/MLB_Lineups/RefreshLineups'
 
-def player_stats(id)
-  HTTParty.post("https://fantasydata.com/MLB_Player/PlayerSeasonStats?sort=&page=1&pageSize=50&group=&filter=&playerid=#{id}&season=2024&scope=1")
+def player_stats(player_id)
+  @cached_stats[player_id] || begin
+    @cached_stats[player_id] =
+      HTTParty.post("https://fantasydata.com/MLB_Player/PlayerSeasonStats?sort=&page=1&pageSize=50&group=&filter=&playerid=#{player_id}&season=2024&scope=1", timeout: 60)
+    @cached_stats[player_id]
+  end
 end
 
 def data
@@ -75,6 +79,7 @@ lineups = data.map do |m|
 end
 
 stats = lineups.each_with_object([]) do |l, arr|
+  @cached_stats = {}
   puts "Fetching stats for #{l[:home][:name]} - #{l[:away][:name]}..."
 
   unless l[:home][:pitcher_id] && l[:away][:pitcher_id]
