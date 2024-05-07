@@ -26,16 +26,16 @@ end
 def export_to_csv(proposals)
   CSV.open("bet_proposals.csv", "w", col_sep: ';') do |csv|
     idx = 2
-    csv << ['Team', 'Pitcher', 'Poss','', 'Prop']
+    csv << ['Team', 'Pitcher', 'Poss', 'Avg. Runs', 'Prop']
     proposals.each do |game|
       csv << [
         game[:home] > game[:away] ? game[:home_team] : game[:away_team],
         game[:home] > game[:away] ? game[:home_pitcher] : game[:away_pitcher],
         [game[:home], game[:away]].max.to_s.gsub('.',','),
-        '',
+        game[:avg_total_runs],
         "=(C#{idx}+D#{idx})/2"
       ]
-      idx+=1
+      idx += 1
     end
   end;0
 end
