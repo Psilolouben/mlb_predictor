@@ -8,7 +8,7 @@ GAMES_URL = 'https://fantasydata.com/MLB_Lineups/RefreshLineups'
 def player_stats(player_id)
   @cached_stats[player_id] || begin
     @cached_stats[player_id] =
-      HTTParty.post("https://fantasydata.com/MLB_Player/PlayerSeasonStats?sort=&page=1&pageSize=50&group=&filter=&playerid=#{player_id}&season=2024&scope=1", timeout: 60)
+      HTTParty.post("https://fantasydata.com/MLB_Player/PlayerSeasonStats?sort=&page=1&pageSize=50&group=&filter=&playerid=#{player_id}&season=2024&scope=1", timeout: 120)
     @cached_stats[player_id]
   end
 end
