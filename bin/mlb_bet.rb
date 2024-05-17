@@ -26,14 +26,18 @@ end
 def export_to_csv(proposals)
   CSV.open("bet_proposals.csv", "w", col_sep: ';') do |csv|
     idx = 2
-    csv << ['Team', 'Pitcher', 'Poss', 'Avg. Runs', 'Prop']
+    csv << ['Team', 'Pitcher', 'Poss', 'Avg. Runs', 'O75', 'O85', 'O95']
+
     proposals.each do |game|
       csv << [
-        game[:home] > game[:away] ? game[:home_team] : game[:away_team],
-        game[:home] > game[:away] ? game[:home_pitcher] : game[:away_pitcher],
+        game[:home] > game[:away] ? "#{game[:home_team]}#{game[:home_pitcher][:era_warning] ? '*' : ''}" : "#{game[:away_team]}#{game[:away_pitcher][:era_warning] ? '*' : ''}",
+        game[:home] > game[:away] ? game[:home_pitcher][:name] : game[:away_pitcher][:name],
         [game[:home], game[:away]].max.to_s.gsub('.',','),
-        game[:avg_total_runs],
-        "=(C#{idx}+D#{idx})/2"
+        game[:avg_total_runs].to_s.gsub('.', ','),
+        game[:o75].to_s.gsub('.', ','),
+        game[:o85].to_s.gsub('.', ','),
+        game[:o95].to_s.gsub('.', ',')
+        #"=(C#{idx}+D#{idx})/2"
       ]
       idx += 1
     end
@@ -43,8 +47,8 @@ end
 proposals = []
 
 def simulate_match(match)
-  expected_home_era = Distribution::Poisson.rng(match[:home_pitcher][:era])
-  expected_away_era = Distribution::Poisson.rng(match[:away_pitcher][:era])
+  expected_home_era = Distribution::Normal.rng(match[:home_pitcher][:era]).call
+  expected_away_era = Distribution::Normal.rng(match[:away_pitcher][:era]).call
   home_runs =  match[:home_avg_rbi].map { |x| Distribution::Poisson.rng(x) }.sum
   away_runs =  match[:away_avg_rbi].map { |x| Distribution::Poisson.rng(x) }.sum
 
@@ -67,6 +71,9 @@ def extract_proposals(match)
     avg_total_runs: match.sum { |x| x[:home] + x[:away] } / match.count.to_f,
     home_pitcher: match.first[:home_pitcher],
     away_pitcher: match.first[:away_pitcher],
+    o75: (match.count { |x| (x[:home] + x[:away]) > 7.5 } / match.count.to_f) * 100,
+    o85: (match.count { |x| (x[:home] + x[:away]) > 8.5 } / match.count.to_f) * 100,
+    o95: (match.count { |x| (x[:home] + x[:away]) > 9.5 } / match.count.to_f) * 100
   }
 end
 
@@ -103,12 +110,14 @@ stats = lineups.each_with_object([]) do |l, arr|
       away_team: l[:away][:name],
       home_pitcher: {
         era: home_pitcher_era,
-        name: l[:home][:pitcher_name]
+        name: l[:home][:pitcher_name],
+        era_warning: home_pitcher_era&.zero?
         #avg_ko: player_stats(l[:home][:pitcher_id])['Data'].first['PitchingStrikeouts'] / player_stats(l[:home][:pitcher_id])['Data'].first['Games'].to_f
       },
       away_pitcher: {
         era: away_pitcher_era,
-        name: l[:away][:pitcher_name]
+        name: l[:away][:pitcher_name],
+        era_warning: away_pitcher_era&.zero?
         #avg_ko: player_stats(l[:away][:pitcher_id])['Data'].first['PitchingStrikeouts'] / player_stats(l[:away][:pitcher_id])['Data'].first['Games'].to_f
       },
       home_avg_rbi: l[:home][:player_ids].map { |rb| player_stats(rb)['Data'].first['RunsBattedIn'] / player_stats(rb)['Data'].first['Games'].to_f },
@@ -122,7 +131,7 @@ stats.each do |s|
   puts "Simulating games..."
   res = []
   15000.times do
-    res << simulate_match(s)
+    res << simulate_match(s).merge(s)
   end
 
   final_results = res.select{ |x| x[:home] != x[:away]}
