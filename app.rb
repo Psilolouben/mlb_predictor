@@ -21,7 +21,7 @@ FunctionsFramework.http "main" do |request|
     }
   end
 
-  stats = lineups.each_with_object([]) do |l, arr|
+  stats = lineups.take(1).each_with_object([]) do |l, arr|
     @cached_stats = {}
     puts "Fetching stats for #{l[:home][:name]} - #{l[:away][:name]}..."
     home_odd = todays_odds.find{|x| x[:home] == l[:home][:name] || x[:away] == l[:away][:name]}&.dig(:home_odd)
