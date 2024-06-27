@@ -163,7 +163,7 @@ end
 def upload_to_bucket
   storage = Google::Cloud::Storage.new(
     project_id: "mlb-bet-predictor",
-    credentials: "mlb-bet-predictor-8308fabe6581.json"
+    credentials: "mlb-bet-predictor-b83d3bb4dce7.json"
   )
   bucket = storage.bucket("gcf-v2-uploads-944915810467-us-central1")
   a = bucket.create_file("bet_proposals.csv", "bet_proposals.csv", cache_control: 'max-age=0')
