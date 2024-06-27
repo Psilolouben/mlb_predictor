@@ -2,6 +2,8 @@ require 'httparty'
 require 'pry'
 require 'pry-nav'
 require 'distribution'
+require 'date'
+require 'json'
 
 GAMES_URL = 'https://fantasydata.com/MLB_Lineups/RefreshLineups'
 
