@@ -6,26 +6,53 @@ require 'date'
 require 'json'
 require 'csv'
 require "google/cloud/storage"
+require 'nokogiri'
 
-GAMES_URL = 'https://fantasydata.com/MLB_Lineups/RefreshLineups'
+#GAMES_URL = 'https://fantasydata.com/MLB_Lineups/RefreshLineups'
+GAMES_URL = 'https://fantasydata.com/mlb/daily-lineups'
 ODDS_URL = 'https://www.novibet.gr/spt/feed/marketviews/location/v2/4324/4375810'
 
 FunctionsFramework.http "main" do |request|
   proposals = []
   todays_odds = odds.compact
   lineups = data.map do |m|
+    home_players = m.children[3].children.map do |c|
+      next if c.children.empty?
+
+      c.children[3].attributes['href'].value.split('/').last
+    end.compact
+    home_players.delete_at(0)
+
+    away_players = m.children[1].children.map do |c|
+      next if c.children.empty?
+
+      c.children[3].attributes['href'].value.split('/').last
+    end.compact
+    away_players.delete_at(0)
+
     {
-      id: m['GameID'],
-      home: { name: m['HomeTeam'], pitcher_id: m['HomeTeamProbablePitcherID'], pitcher_name: m.dig('HomeTeamProbablePitcherDetails','Name'), player_ids: m['HomeLineup'].map { |p| p['Player']['PlayerID'] }},
-      away: { name: m['AwayTeam'], pitcher_id: m['AwayTeamProbablePitcherID'], pitcher_name: m.dig('AwayTeamProbablePitcherDetails','Name'),player_ids: m['AwayLineup'].map { |p| p['Player']['PlayerID'] }}
+      id: 'koko',
+      home: {
+        name: m.parent.children[1].children[7].children[1].children.first.text.strip.split('@').last.gsub(/\s+/, ""),
+        pitcher_id: m.children[3].children[1].children[3].attributes['href'].value.split('/').last,
+        pitcher_name: m.children[3].children[1].children[3].text,
+        player_ids: home_players
+      },
+      away: {
+        name: m.parent.children[1].children[7].children[1].children.first.text.strip.split('@').first.gsub(/\s+/, ""),
+        pitcher_id: m.children[1].children[1].children[3].attributes['href'].value.split('/').last,
+        pitcher_name: m.children[1].children[1].children[3].text,
+        player_ids: away_players
+      }
     }
   end
 
   stats = lineups.each_with_object([]) do |l, arr|
     @cached_stats = {}
+
     puts "Fetching stats for #{l[:home][:name]} - #{l[:away][:name]}..."
-    home_odd = todays_odds.find{|x| x[:home] == l[:home][:name] || x[:away] == l[:away][:name]}&.dig(:home_odd)
-    away_odd = todays_odds.find{|x| x[:home] == l[:home][:name] || x[:away] == l[:away][:name]}&.dig(:away_odd)
+    #home_odd = todays_odds.find{|x| x[:home] == l[:home][:name] || x[:away] == l[:away][:name]}&.dig(:home_odd)
+    #away_odd = todays_odds.find{|x| x[:home] == l[:home][:name] || x[:away] == l[:away][:name]}&.dig(:away_odd)
 
     unless l[:home][:pitcher_id] && l[:away][:pitcher_id]
       puts 'Pitcher not found, match will be skipped'
@@ -34,9 +61,11 @@ FunctionsFramework.http "main" do |request|
       puts "#{l[:home][:pitcher_name]} vs #{l[:away][:pitcher_name]}"
     end
 
-    home_pitcher_era = player_stats(l[:home][:pitcher_id]).dig('Data')&.first&.dig('EarnedRunAverage')
+    home_stats = player_stats(l[:home][:pitcher_id])
+    home_pitcher_era = (home_stats.children[9].text.to_f / home_stats.children[6].text.to_f) * 9.0
 
-    away_pitcher_era = player_stats(l[:away][:pitcher_id]).dig('Data')&.first&.dig('EarnedRunAverage')
+    away_stats = player_stats(l[:away][:pitcher_id])
+    away_pitcher_era = (away_stats.children[9].text.to_f / away_stats.children[6].text.to_f) * 9.0
 
     puts "Warning!!! #{l[:home][:pitcher_name]} has no ERA" if home_pitcher_era&.zero?
 
@@ -58,10 +87,10 @@ FunctionsFramework.http "main" do |request|
           era_warning: away_pitcher_era&.zero?
           #avg_ko: player_stats(l[:away][:pitcher_id])['Data'].first['PitchingStrikeouts'] / player_stats(l[:away][:pitcher_id])['Data'].first['Games'].to_f
         },
-        home_avg_rbi: l[:home][:player_ids].map { |rb| player_stats(rb)['Data'].first['RunsBattedIn'] / player_stats(rb)['Data'].first['Games'].to_f },
-        away_avg_rbi: l[:away][:player_ids].map { |rb| player_stats(rb)['Data'].first['RunsBattedIn'] / player_stats(rb)['Data'].first['Games'].to_f },
-        home_odd:,
-        away_odd:
+        home_avg_rbi: l[:home][:player_ids].map { |rb| player_stats(rb).children[10].text.to_f / player_stats(rb).children[4].text.to_f },
+        away_avg_rbi: l[:away][:player_ids].map { |rb| player_stats(rb).children[10].text.to_f / player_stats(rb).children[4].text.to_f },
+        home_odd: nil,
+        away_odd: nil
       }
   end
 
@@ -84,20 +113,31 @@ end
 
 def player_stats(player_id)
   @cached_stats[player_id] || begin
+    d = HTTParty.get("https://fantasydata.com/mlb/a-b-fantasy/#{player_id}", timeout: 120)
     @cached_stats[player_id] =
-      HTTParty.post("https://fantasydata.com/MLB_Player/PlayerSeasonStats?sort=&page=1&pageSize=50&group=&filter=&playerid=#{player_id}&season=2024&scope=1", timeout: 120)
-    @cached_stats[player_id]
+      #HTTParty.post("https://fantasydata.com/MLB_Player/PlayerSeasonStats?sort=&page=1&pageSize=50&group=&filter=&playerid=#{player_id}&season=2024&scope=1", timeout: 120)
+      Nokogiri::HTML(d).xpath("//*[@class='d-inline-block']")[1].
+      children[1].
+      children[7].
+      children.select{|x| x&.children&.first&.children&.first&.text == '2024'}.first
+      @cached_stats[player_id]
   end
 end
 
-def data
-  HTTParty.post(GAMES_URL,
-    body: {
-      "filters": {
-        "date": Date.today.to_s
-      }
-    }.to_json,
+def data_old
+  HTTParty.get(GAMES_URL,
+    #body: {
+    #  "filters": {
+    #    "date": Date.today.to_s
+    #  }
+    #}.to_json,
     headers: { 'Content-Type' => 'application/json' })
+end
+
+def data
+  d = HTTParty.get(GAMES_URL,
+    headers: { 'Content-Type' => 'application/json' })
+    Nokogiri::HTML(d).xpath("//*[@class='lineup']")
 end
 
 def export_to_csv(proposals)
@@ -182,5 +222,3 @@ def odds
     }
   end
 end
-
-
