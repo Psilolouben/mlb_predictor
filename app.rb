@@ -62,10 +62,10 @@ FunctionsFramework.http "main" do |request|
     end
 
     home_stats = player_stats(l[:home][:pitcher_id])
-    home_pitcher_era = (home_stats.children[9].text.to_f / home_stats.children[6].text.to_f) * 9.0
+    home_pitcher_era =  home_stats.nil? ? 0 : (home_stats.children[9].text.to_f / home_stats.children[6].text.to_f) * 9.0
 
     away_stats = player_stats(l[:away][:pitcher_id])
-    away_pitcher_era = (away_stats.children[9].text.to_f / away_stats.children[6].text.to_f) * 9.0
+    away_pitcher_era = away_stats.nil? ? 0 : (away_stats.children[9].text.to_f / away_stats.children[6].text.to_f) * 9.0
 
     puts "Warning!!! #{l[:home][:pitcher_name]} has no ERA" if home_pitcher_era&.zero?
 
@@ -87,8 +87,8 @@ FunctionsFramework.http "main" do |request|
           era_warning: away_pitcher_era&.zero?
           #avg_ko: player_stats(l[:away][:pitcher_id])['Data'].first['PitchingStrikeouts'] / player_stats(l[:away][:pitcher_id])['Data'].first['Games'].to_f
         },
-        home_avg_rbi: l[:home][:player_ids].map { |rb| player_stats(rb).children[10].text.to_f / player_stats(rb).children[4].text.to_f },
-        away_avg_rbi: l[:away][:player_ids].map { |rb| player_stats(rb).children[10].text.to_f / player_stats(rb).children[4].text.to_f },
+        home_avg_rbi: l[:home][:player_ids].map { |rb| player_stats(rb).children[10].text.to_f / player_stats(rb).children[3].text.to_f },
+        away_avg_rbi: l[:away][:player_ids].map { |rb| player_stats(rb).children[10].text.to_f / player_stats(rb).children[3].text.to_f },
         home_odd: nil,
         away_odd: nil
       }
