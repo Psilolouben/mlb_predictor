@@ -9,7 +9,7 @@ require "google/cloud/storage"
 require 'nokogiri'
 
 #GAMES_URL = 'https://fantasydata.com/MLB_Lineups/RefreshLineups'
-GAMES_URL = 'https://fantasydata.com/mlb/daily-lineups'
+GAMES_URL = "https://fantasydata.com/mlb/daily-lineups?date=#{Date.today.to_s}"
 ODDS_URL = 'https://www.novibet.gr/spt/feed/marketviews/location/v2/4324/4375810'
 
 FunctionsFramework.http "main" do |request|
