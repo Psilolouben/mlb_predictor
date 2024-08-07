@@ -18,15 +18,13 @@ FunctionsFramework.http "main" do |request|
   lineups = data.map do |m|
     home_players = m.children[3].children.map do |c|
       next if c.children.empty?
-
-      c.children[3].attributes['href'].value.split('/').last
+      c.children[3].nil? ? nil : c.children[3].attributes['href'].value.split('/').last
     end.compact
     home_players.delete_at(0)
 
     away_players = m.children[1].children.map do |c|
       next if c.children.empty?
-
-      c.children[3].attributes['href'].value.split('/').last
+      c.children[3].nil? ? nil : c.children[3].attributes['href'].value.split('/').last
     end.compact
     away_players.delete_at(0)
 
@@ -34,14 +32,14 @@ FunctionsFramework.http "main" do |request|
       id: 'koko',
       home: {
         name: m.parent.children[1].children[7].children[1].children.first.text.strip.split('@').last.gsub(/\s+/, ""),
-        pitcher_id: m.children[3].children[1].children[3].attributes['href'].value.split('/').last,
-        pitcher_name: m.children[3].children[1].children[3].text,
+        pitcher_id: m.children[3].children[1].children[3].nil? ? nil : m.children[3].children[1].children[3].attributes['href'].value.split('/').last,
+        pitcher_name: m.children[3].children[1].children[3]&.text,
         player_ids: home_players
       },
       away: {
         name: m.parent.children[1].children[7].children[1].children.first.text.strip.split('@').first.gsub(/\s+/, ""),
-        pitcher_id: m.children[1].children[1].children[3].attributes['href'].value.split('/').last,
-        pitcher_name: m.children[1].children[1].children[3].text,
+        pitcher_id: m.children[1].children[1].children[3].nil? ? nil : m.children[1].children[1].children[3].attributes['href'].value.split('/').last,
+        pitcher_name: m.children[1].children[1].children[3]&.text,
         player_ids: away_players
       }
     }
@@ -62,10 +60,11 @@ FunctionsFramework.http "main" do |request|
     end
 
     home_stats = player_stats(l[:home][:pitcher_id])
-    home_pitcher_era =  home_stats.nil? ? 0 : (home_stats.children[9].text.to_f / home_stats.children[6].text.to_f) * 9.0
+    home_pitcher_era =  home_stats.nil? ? 0 : home_stats.children[9].text.to_f
 
     away_stats = player_stats(l[:away][:pitcher_id])
-    away_pitcher_era = away_stats.nil? ? 0 : (away_stats.children[9].text.to_f / away_stats.children[6].text.to_f) * 9.0
+
+    away_pitcher_era = away_stats.nil? ? 0 : away_stats.children[9].text.to_f
 
     puts "Warning!!! #{l[:home][:pitcher_name]} has no ERA" if home_pitcher_era&.zero?
 
@@ -87,8 +86,8 @@ FunctionsFramework.http "main" do |request|
           era_warning: away_pitcher_era&.zero?
           #avg_ko: player_stats(l[:away][:pitcher_id])['Data'].first['PitchingStrikeouts'] / player_stats(l[:away][:pitcher_id])['Data'].first['Games'].to_f
         },
-        home_avg_rbi: l[:home][:player_ids].map { |rb| player_stats(rb).children[10].text.to_f / player_stats(rb).children[3].text.to_f },
-        away_avg_rbi: l[:away][:player_ids].map { |rb| player_stats(rb).children[10].text.to_f / player_stats(rb).children[3].text.to_f },
+        home_avg_rbi: l[:home][:player_ids].map { |rb| player_stats(rb)&.children.to_a[10]&.text.to_f / player_stats(rb)&.children.to_a[3]&.text.to_f },
+        away_avg_rbi: l[:away][:player_ids].map { |rb| player_stats(rb)&.children.to_a[10]&.text.to_f / player_stats(rb)&.children.to_a[3]&.text.to_f },
         home_odd: nil,
         away_odd: nil
       }
