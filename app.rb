@@ -113,9 +113,10 @@ end
 def player_stats(player_id)
   @cached_stats[player_id] || begin
     d = HTTParty.get("https://fantasydata.com/mlb/a-b-fantasy/#{player_id}", timeout: 120)
+
     @cached_stats[player_id] =
       #HTTParty.post("https://fantasydata.com/MLB_Player/PlayerSeasonStats?sort=&page=1&pageSize=50&group=&filter=&playerid=#{player_id}&season=2024&scope=1", timeout: 120)
-      Nokogiri::HTML(d).xpath("//*[@class='d-inline-block']")[1].
+      Nokogiri::HTML(d.body).xpath("//*[@class='d-inline-block']")[1].
       children[1].
       children[7].
       children.select{|x| x&.children&.first&.children&.first&.text == '2024'}.first
@@ -136,7 +137,7 @@ end
 def data
   d = HTTParty.get(GAMES_URL,
     headers: { 'Content-Type' => 'application/json' })
-    Nokogiri::HTML(d).xpath("//*[@class='lineup']")
+    Nokogiri::HTML(d.body).xpath("//*[@class='lineup']")
 end
 
 def export_to_csv(proposals)
