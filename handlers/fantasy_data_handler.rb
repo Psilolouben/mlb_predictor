@@ -1,7 +1,7 @@
 require_relative './base_handler.rb'
 class FantasyDataHandler < BaseHandler
   def data
-    d = HTTParty.get(GAMES_URL,
+    d = HTTParty.get(games_url,
       headers: { 'Content-Type' => 'application/json' })
       Nokogiri::HTML(d.body).xpath("//*[@class='lineup']")
   end
@@ -100,5 +100,9 @@ class FantasyDataHandler < BaseHandler
         children.select{|x| x&.children&.first&.children&.first&.text == '2024'}.first
         @cached_stats[player_id]
     end
+  end
+
+  def games_url
+    "https://fantasydata.com/mlb/daily-lineups?date=#{Date.today.to_s}"
   end
 end
