@@ -7,16 +7,17 @@ require 'json'
 require 'csv'
 require "google/cloud/storage"
 require 'nokogiri'
-require_relative 'handlers/fantasy_data_handler.rb'
 
-#GAMES_URL = 'https://fantasydata.com/MLB_Lineups/RefreshLineups'
-GAMES_URL = "https://fantasydata.com/mlb/daily-lineups?date=#{Date.today.to_s}"
+Dir["./handlers/*.rb"].each {|file| require file }
+
 ODDS_URL = 'https://www.novibet.gr/spt/feed/marketviews/location/v2/4324/4375810'
 
 FunctionsFramework.http "main" do |request|
   handler = request.params['handler'] ?
     Object.const_get("#{request.params['handler']&.split('_')&.collect(&:capitalize)&.join}Handler").new :
     FantasyDataHandler.new
+
+  puts "Using #{handler.class}"
 
   proposals = []
   todays_odds = odds.compact
