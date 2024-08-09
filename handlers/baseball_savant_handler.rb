@@ -1,25 +1,11 @@
 require_relative './base_handler.rb'
-class FantasyDataHandler < BaseHandler
+class BaseballSavantHandler < BaseHandler
   def data
-    d = HTTParty.get(GAMES_URL,
-      headers: { 'Content-Type' => 'application/json' })
-      Nokogiri::HTML(d.body).xpath("//*[@class='lineup']")
+    binding.pry
   end
 
   def lineups
     data.map do |m|
-      home_players = m.children[3].children.map do |c|
-        next if c.children.empty?
-        c.children[3].nil? ? nil : c.children[3].attributes['href'].value.split('/').last
-      end.compact
-      home_players.delete_at(0)
-
-      away_players = m.children[1].children.map do |c|
-        next if c.children.empty?
-        c.children[3].nil? ? nil : c.children[3].attributes['href'].value.split('/').last
-      end.compact
-      away_players.delete_at(0)
-
       {
         id: 'koko',
         home: {
@@ -100,5 +86,33 @@ class FantasyDataHandler < BaseHandler
         children.select{|x| x&.children&.first&.children&.first&.text == '2024'}.first
         @cached_stats[player_id]
     end
+  end
+
+  def matches
+    data_json = HTTParty.get(games_url, headers: { 'Content-Type' => 'application/json' })
+    data_json.dig('schedule','dates')&.first['games'].map do |m|
+      offense_team_id = data_json.dig('schedule','dates')&.first['games'].first.dig('linescore','offense','team','id')
+      defense_team_id = data_json.dig('schedule','dates')&.first['games'].first.dig('linescore','defense','team','id')
+      home_offense_mapping = offense_team_id == m.dig('teams', 'home', 'team', 'id') ? 'offense' : 'defense'
+      away_offense_mapping = offense_team_id == m.dig('teams', 'away', 'team', 'id') ? 'offense' : 'defense'
+
+      {
+        match_id: m['gamePk'],
+        home: m.dig('teams', 'home', 'team', 'name'),
+        home_id: m.dig('teams', 'home', 'team', 'id'),
+        away: m.dig('teams', 'away', 'team', 'name'),
+        away_id: m.dig('teams', 'away', 'team', 'id'),
+        home_pitcher: m.dig('teams', 'home', 'probablePitcher', 'fullName'),
+        away_pitcher: m.dig('teams', 'away', 'probablePitcher', 'fullName'),
+        home_pitcher_id: m.dig('teams', 'home', 'probablePitcher', 'id'),
+        away_pitcher_id: m.dig('teams', 'away', 'probablePitcher', 'id'),
+        home_player_ids: m.dig('linescore', home_offense_mapping)&.reject{|k, _| ['pitcher', 'batter', 'onDeck', 'inHole', 'team', 'battingOrder'].include?(k) }&.map{|_,v| v['id']},
+        away_player_ids: m.dig('linescore', away_offense_mapping)&.reject{|k, _| ['pitcher', 'batter', 'onDeck', 'inHole', 'team', 'battingOrder'].include?(k) }&.map{|_,v| v['id']},
+      }
+    end
+  end
+
+  def games_url
+    "https://baseballsavant.mlb.com/schedule?date=#{Date.today.to_s}"
   end
 end
