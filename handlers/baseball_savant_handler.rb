@@ -1,36 +1,11 @@
 require_relative './base_handler.rb'
+require 'csv'
 class BaseballSavantHandler < BaseHandler
-  def data
-    binding.pry
-  end
-
-  def lineups
-    data.map do |m|
-      {
-        id: 'koko',
-        home: {
-          name: m.parent.children[1].children[7].children[1].children.first.text.strip.split('@').last.gsub(/\s+/, ""),
-          pitcher_id: m.children[3].children[1].children[3].nil? ? nil : m.children[3].children[1].children[3].attributes['href'].value.split('/').last,
-          pitcher_name: m.children[3].children[1].children[3]&.text,
-          player_ids: home_players
-        },
-        away: {
-          name: m.parent.children[1].children[7].children[1].children.first.text.strip.split('@').first.gsub(/\s+/, ""),
-          pitcher_id: m.children[1].children[1].children[3].nil? ? nil : m.children[1].children[1].children[3].attributes['href'].value.split('/').last,
-          pitcher_name: m.children[1].children[1].children[3]&.text,
-          player_ids: away_players
-        }
-      }
-    end
-  end
-
   def stats
     lineups.take(2).each_with_object([]) do |l, arr|
       @cached_stats = {}
 
       puts "Fetching stats for #{l[:home][:name]} - #{l[:away][:name]}..."
-      #home_odd = todays_odds.find{|x| x[:home] == l[:home][:name] || x[:away] == l[:away][:name]}&.dig(:home_odd)
-      #away_odd = todays_odds.find{|x| x[:home] == l[:home][:name] || x[:away] == l[:away][:name]}&.dig(:away_odd)
 
       unless l[:home][:pitcher_id] && l[:away][:pitcher_id]
         puts 'Pitcher not found, match will be skipped'
@@ -38,17 +13,8 @@ class BaseballSavantHandler < BaseHandler
       else
         puts "#{l[:home][:pitcher_name]} vs #{l[:away][:pitcher_name]}"
       end
-
-      home_stats = player_stats(l[:home][:pitcher_id])
-      home_pitcher_era =  home_stats.nil? ? 0 : home_stats.children[9].text.to_f
-
-      away_stats = player_stats(l[:away][:pitcher_id])
-
-      away_pitcher_era = away_stats.nil? ? 0 : away_stats.children[9].text.to_f
-
-      puts "Warning!!! #{l[:home][:pitcher_name]} has no ERA" if home_pitcher_era&.zero?
-
-      puts "Warning!!! #{l[:away][:pitcher_name]} has no ERA" if away_pitcher_era&.zero?
+      binding.pry
+      home_pitcher_stats = player_stats(l[:home][:pitcher_id], true)
 
       arr <<
         {
@@ -74,45 +40,50 @@ class BaseballSavantHandler < BaseHandler
     end
   end
 
-  def player_stats(player_id)
+  def player_stats(player_id, pitcher = false)
     @cached_stats[player_id] || begin
-      d = HTTParty.get("https://fantasydata.com/mlb/a-b-fantasy/#{player_id}", timeout: 120)
+      d = HTTParty.get(player_stat_url(player_id, pitcher), timeout: 120)
+      binding.pry
+      convert_csv_to_json(d.body)
 
-      @cached_stats[player_id] =
-        #HTTParty.post("https://fantasydata.com/MLB_Player/PlayerSeasonStats?sort=&page=1&pageSize=50&group=&filter=&playerid=#{player_id}&season=2024&scope=1", timeout: 120)
-        Nokogiri::HTML(d.body).xpath("//*[@class='d-inline-block']")[1].
-        children[1].
-        children[7].
-        children.select{|x| x&.children&.first&.children&.first&.text == '2024'}.first
-        @cached_stats[player_id]
     end
   end
 
-  def matches
+  def lineups
     data_json = HTTParty.get(games_url, headers: { 'Content-Type' => 'application/json' })
     data_json.dig('schedule','dates')&.first['games'].map do |m|
       offense_team_id = data_json.dig('schedule','dates')&.first['games'].first.dig('linescore','offense','team','id')
-      defense_team_id = data_json.dig('schedule','dates')&.first['games'].first.dig('linescore','defense','team','id')
       home_offense_mapping = offense_team_id == m.dig('teams', 'home', 'team', 'id') ? 'offense' : 'defense'
       away_offense_mapping = offense_team_id == m.dig('teams', 'away', 'team', 'id') ? 'offense' : 'defense'
 
       {
-        match_id: m['gamePk'],
-        home: m.dig('teams', 'home', 'team', 'name'),
-        home_id: m.dig('teams', 'home', 'team', 'id'),
-        away: m.dig('teams', 'away', 'team', 'name'),
-        away_id: m.dig('teams', 'away', 'team', 'id'),
-        home_pitcher: m.dig('teams', 'home', 'probablePitcher', 'fullName'),
-        away_pitcher: m.dig('teams', 'away', 'probablePitcher', 'fullName'),
-        home_pitcher_id: m.dig('teams', 'home', 'probablePitcher', 'id'),
-        away_pitcher_id: m.dig('teams', 'away', 'probablePitcher', 'id'),
-        home_player_ids: m.dig('linescore', home_offense_mapping)&.reject{|k, _| ['pitcher', 'batter', 'onDeck', 'inHole', 'team', 'battingOrder'].include?(k) }&.map{|_,v| v['id']},
-        away_player_ids: m.dig('linescore', away_offense_mapping)&.reject{|k, _| ['pitcher', 'batter', 'onDeck', 'inHole', 'team', 'battingOrder'].include?(k) }&.map{|_,v| v['id']},
+        id: m['gamePk'],
+        home: {
+          name: m.dig('teams', 'home', 'team', 'name'),
+          pitcher_id: m.dig('teams', 'home', 'probablePitcher', 'id'),
+          pitcher_name: m.dig('teams', 'home', 'probablePitcher', 'fullName'),
+          player_ids: m.dig('linescore', home_offense_mapping)&.reject{|k, _| ['pitcher', 'batter', 'onDeck', 'inHole', 'team', 'battingOrder'].include?(k) }&.map{|_,v| v['id']},
+        },
+        away: {
+          name: m.dig('teams', 'away', 'team', 'name'),
+          pitcher_id: m.dig('teams', 'away', 'probablePitcher', 'id'),
+          pitcher_name: m.dig('teams', 'away', 'probablePitcher', 'fullName'),
+          player_ids: m.dig('linescore', away_offense_mapping)&.reject{|k, _| ['pitcher', 'batter', 'onDeck', 'inHole', 'team', 'battingOrder'].include?(k) }&.map{|_,v| v['id']},
+        }
       }
     end
   end
 
   def games_url
     "https://baseballsavant.mlb.com/schedule?date=#{Date.today.to_s}"
+  end
+
+  def player_stat_url(player_id, pitcher)
+    "https://baseballsavant.mlb.com/statcast_search/csv?type=pitcher&player_type=#{pitcher ? 'pitcher' : 'batter'}&year=2024&player_id=#{player_id}"
+  end
+
+  def convert_csv_to_json(csv_data)
+    csv = CSV.parse(csv_data, headers: true)
+    csv.map(&:to_h).to_json
   end
 end
