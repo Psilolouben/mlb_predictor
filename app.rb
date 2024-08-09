@@ -14,7 +14,9 @@ GAMES_URL = "https://fantasydata.com/mlb/daily-lineups?date=#{Date.today.to_s}"
 ODDS_URL = 'https://www.novibet.gr/spt/feed/marketviews/location/v2/4324/4375810'
 
 FunctionsFramework.http "main" do |request|
-  handler = FantasyDataHandler.new
+  handler = request.params['handler'] ?
+    Object.const_get("#{request.params['handler']&.split('_')&.collect(&:capitalize)&.join}Handler").new :
+    FantasyDataHandler.new
 
   proposals = []
   todays_odds = odds.compact
