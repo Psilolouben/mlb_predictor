@@ -83,7 +83,7 @@ class BaseballSavantHandler < BaseHandler
   end
 
   def convert_csv_to_json(csv_data)
-    csv = CSV.parse(csv_data, headers: true)
+    csv = CSV.parse(d.body, headers: true, liberal_parsing: true)
     csv.map(&:to_h).to_json
   end
 end
