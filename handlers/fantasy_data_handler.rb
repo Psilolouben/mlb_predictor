@@ -39,7 +39,7 @@ class FantasyDataHandler < BaseHandler
   end
 
   def stats
-    lineups.take(2).each_with_object([]) do |l, arr|
+    lineups.each_with_object([]) do |l, arr|
       @cached_stats = {}
 
       puts "Fetching stats for #{l[:home][:name]} - #{l[:away][:name]}..."
