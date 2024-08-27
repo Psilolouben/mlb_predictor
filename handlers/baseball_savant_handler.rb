@@ -1,8 +1,9 @@
 require_relative './base_handler.rb'
 require 'csv'
+
 class BaseballSavantHandler < BaseHandler
   def stats
-    lineups.take(2).each_with_object([]) do |l, arr|
+    lineups.each_with_object([]) do |l, arr|
       @cached_stats = {}
 
       puts "Fetching stats for #{l[:home][:name]} - #{l[:away][:name]}..."
@@ -13,15 +14,15 @@ class BaseballSavantHandler < BaseHandler
       else
         puts "#{l[:home][:pitcher_name]} vs #{l[:away][:pitcher_name]}"
       end
-      binding.pry
-      home_pitcher_stats = player_stats(l[:home][:pitcher_id], true)
+      home_pitcher_era = player_stats(l[:home][:pitcher_id])[player_stats(l[:home][:pitcher_id]).index{|x| x.text == 'xERA'} + 1].text.to_f
+      away_pitcher_era = player_stats(l[:away][:pitcher_id])[player_stats(l[:away][:pitcher_id]).index{|x| x.text == 'xERA'} + 1].text.to_f
 
       arr <<
         {
           home_team: l[:home][:name],
           away_team: l[:away][:name],
           home_pitcher: {
-            era: home_pitcher_era,
+            era:  home_pitcher_era,
             name: l[:home][:pitcher_name],
             era_warning: home_pitcher_era&.zero?
             #avg_ko: player_stats(l[:home][:pitcher_id])['Data'].first['PitchingStrikeouts'] / player_stats(l[:home][:pitcher_id])['Data'].first['Games'].to_f
@@ -40,12 +41,16 @@ class BaseballSavantHandler < BaseHandler
     end
   end
 
-  def player_stats(player_id, pitcher = false)
+  def player_stats(player_id)
     @cached_stats[player_id] || begin
-      d = HTTParty.get(player_stat_url(player_id, pitcher), timeout: 120)
-      binding.pry
-      convert_csv_to_json(d.body)
-
+      options = Selenium::WebDriver::Options.chrome
+      options.args << '--disable-search-engine-choice-screen'
+      driver = Selenium::WebDriver.for(:chrome, options: options)
+      driver.navigate.to player_stat_url(player_id)
+      elements = driver.find_element(id: "percentile-slider-viz").attribute("innerHTML")
+      driver.close
+      @cached_stats[player_id] = Nokogiri::XML(elements).xpath("//text")
+      @cached_stats[player_id]
     end
   end
 
@@ -78,12 +83,7 @@ class BaseballSavantHandler < BaseHandler
     "https://baseballsavant.mlb.com/schedule?date=#{Date.today.to_s}"
   end
 
-  def player_stat_url(player_id, pitcher)
-    "https://baseballsavant.mlb.com/statcast_search/csv?type=pitcher&player_type=#{pitcher ? 'pitcher' : 'batter'}&year=2024&player_id=#{player_id}"
-  end
-
-  def convert_csv_to_json(csv_data)
-    csv = CSV.parse(d.body, headers: true, liberal_parsing: true)
-    csv.map(&:to_h).to_json
+  def player_stat_url(player_id)
+    "https://baseballsavant.mlb.com/savant-player/#{player_id}?stats=statcast-r-pitching-mlb"
   end
 end

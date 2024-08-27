@@ -7,6 +7,7 @@ require 'json'
 require 'csv'
 require "google/cloud/storage"
 require 'nokogiri'
+require 'selenium-webdriver'
 
 Dir["./handlers/*.rb"].each {|file| require file }
 
@@ -61,11 +62,12 @@ def odds
   odds = HTTParty.get(ODDS_URL, timeout: 120)
   odds.first['betViews'].first['items'].map do |odd|
     next if odd['isLive']
+
     {
       home: odd['additionalCaptions']['competitor1'].split('(').first.split(' ').first,
       away: odd['additionalCaptions']['competitor2'].split('(').first.split(' ').first,
-      home_odd: odd['markets'].first['betItems'].first['price'],
-      away_odd: odd['markets'].first['betItems'].last['price']
+      home_odd: odd['markets'].first&.dig('betItems')&.first&.dig('price'),
+      away_odd: odd['markets'].first&.dig('betItems')&.last&.dig('price')
     }
   end
 end
