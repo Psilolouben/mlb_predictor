@@ -21,7 +21,7 @@ FunctionsFramework.http "main" do |request|
   puts "Using #{handler.class}"
 
   proposals = []
-  todays_odds = odds.compact
+  #todays_odds = odds.compact
 
   handler.stats.each do |s|
     next unless s[:home_pitcher][:era] && s[:away_pitcher][:era]

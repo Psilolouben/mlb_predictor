@@ -20,17 +20,24 @@ class FantasyDataHandler < BaseHandler
       end.compact
       away_players.delete_at(0)
 
+      home_team = m.parent.children[1].children[7].children[1].children.first.text.strip.split('@').last.gsub(/\s+/, "").gsub(/[[:space:]]/,'')
+      away_team = m.parent.children[1].children[7].children[1].children.first.text.strip.split('@').first.gsub(/\s+/, "").gsub(/[[:space:]]/,'')
+
+      match = savant_lineups.select{|x| x[:home][:name].split(' ').join.include?(home_team)}.first
+      home_pitcher_id = match[:home][:name].split(' ').join.include?(home_team) ? match[:home][:pitcher_id] : match[:away][:pitcher_id]
+      away_pitcher_id = match[:home][:name].split(' ').join.include?(away_team) ? match[:home][:pitcher_id] : match[:away][:pitcher_id]
+
       {
         id: 'koko',
         home: {
           name: m.parent.children[1].children[7].children[1].children.first.text.strip.split('@').last.gsub(/\s+/, ""),
-          pitcher_id: m.children[3].children[1].children[3].nil? ? nil : m.children[3].children[1].children[3].attributes['href'].value.split('/').last,
+          pitcher_id: home_pitcher_id,
           pitcher_name: m.children[3].children[1].children[3]&.text,
           player_ids: home_players
         },
         away: {
           name: m.parent.children[1].children[7].children[1].children.first.text.strip.split('@').first.gsub(/\s+/, ""),
-          pitcher_id: m.children[1].children[1].children[3].nil? ? nil : m.children[1].children[1].children[3].attributes['href'].value.split('/').last,
+          pitcher_id: away_pitcher_id,
           pitcher_name: m.children[1].children[1].children[3]&.text,
           player_ids: away_players
         }
@@ -39,7 +46,7 @@ class FantasyDataHandler < BaseHandler
   end
 
   def stats
-    lineups.each_with_object([]) do |l, arr|
+    res = lineups.each_with_object([]) do |l, arr|
       @cached_stats = {}
 
       puts "Fetching stats for #{l[:home][:name]} - #{l[:away][:name]}..."
@@ -53,12 +60,15 @@ class FantasyDataHandler < BaseHandler
         puts "#{l[:home][:pitcher_name]} vs #{l[:away][:pitcher_name]}"
       end
 
-      home_stats = player_stats(l[:home][:pitcher_id])
-      home_pitcher_era =  home_stats.nil? ? 0 : home_stats.children[9].text.to_f
+      #home_stats = player_stats(l[:home][:pitcher_id])
+      home_pitcher_era =  pitcher_stats(l[:home][:pitcher_id])[pitcher_stats(l[:home][:pitcher_id]).index{|x| x.text == 'xERA'} + 1].text.to_f
+      #python_script = './statcast.py'
+      #home_pitcher_era = `python3 #{python_script} #{l[:home][:pitcher_id]} 2024`.split("\n").last.to_f
 
-      away_stats = player_stats(l[:away][:pitcher_id])
 
-      away_pitcher_era = away_stats.nil? ? 0 : away_stats.children[9].text.to_f
+      #away_stats = player_stats(l[:away][:pitcher_id])
+      away_pitcher_era = pitcher_stats(l[:away][:pitcher_id])[pitcher_stats(l[:away][:pitcher_id]).index{|x| x.text == 'xERA'} + 1].text.to_f
+      #away_pitcher_era = `python3 #{python_script} #{l[:away][:pitcher_id]} 2024`.split("\n").last.to_f
 
       puts "Warning!!! #{l[:home][:pitcher_name]} has no ERA" if home_pitcher_era&.zero?
 
@@ -86,6 +96,8 @@ class FantasyDataHandler < BaseHandler
           away_odd: nil
         }
     end
+    selenium_driver.close
+    res
   end
 
   def player_stats(player_id)
@@ -102,7 +114,60 @@ class FantasyDataHandler < BaseHandler
     end
   end
 
+  def selenium_driver
+    @selenium_driver ||= begin
+      options = Selenium::WebDriver::Options.chrome
+      options.args << '--disable-search-engine-choice-screen'
+      options.args << 'headless'
+      driver = Selenium::WebDriver.for(:chrome, options: options)
+    end
+  end
+
+  def pitcher_stats(player_id)
+    @cached_stats[player_id] || begin
+      selenium_driver.navigate.to player_stat_url(player_id)
+      elements = selenium_driver.find_element(id: "percentile-slider-viz").attribute("innerHTML")
+      @cached_stats[player_id] = Nokogiri::XML(elements).xpath("//text")
+      @cached_stats[player_id]
+    end
+  end
+
   def games_url
     "https://fantasydata.com/mlb/daily-lineups?date=#{Date.today.to_s}"
+  end
+
+  def player_stat_url(player_id)
+    "https://baseballsavant.mlb.com/savant-player/#{player_id}?stats=statcast-r-pitching-mlb"
+  end
+
+  def savant_lineups
+    @savant_lineups ||= begin
+      data_json = HTTParty.get(savant_games_url, headers: { 'Content-Type' => 'application/json' })
+      data_json.dig('schedule','dates')&.first['games'].map do |m|
+        offense_team_id = data_json.dig('schedule','dates')&.first['games'].first.dig('linescore','offense','team','id')
+        home_offense_mapping = offense_team_id == m.dig('teams', 'home', 'team', 'id') ? 'offense' : 'defense'
+        away_offense_mapping = offense_team_id == m.dig('teams', 'away', 'team', 'id') ? 'offense' : 'defense'
+
+        {
+          id: m['gamePk'],
+          home: {
+            name: m.dig('teams', 'home', 'team', 'name'),
+            pitcher_id: m.dig('teams', 'home', 'probablePitcher', 'id'),
+            pitcher_name: m.dig('teams', 'home', 'probablePitcher', 'fullName'),
+            player_ids: m.dig('linescore', home_offense_mapping)&.reject{|k, _| ['pitcher', 'batter', 'onDeck', 'inHole', 'team', 'battingOrder'].include?(k) }&.map{|_,v| v['id']},
+          },
+          away: {
+            name: m.dig('teams', 'away', 'team', 'name'),
+            pitcher_id: m.dig('teams', 'away', 'probablePitcher', 'id'),
+            pitcher_name: m.dig('teams', 'away', 'probablePitcher', 'fullName'),
+            player_ids: m.dig('linescore', away_offense_mapping)&.reject{|k, _| ['pitcher', 'batter', 'onDeck', 'inHole', 'team', 'battingOrder'].include?(k) }&.map{|_,v| v['id']},
+          }
+        }
+      end
+    end
+  end
+
+  def savant_games_url
+    "https://baseballsavant.mlb.com/schedule?date=#{Date.today.to_s}"
   end
 end
