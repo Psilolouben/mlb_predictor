@@ -61,13 +61,13 @@ class FantasyDataHandler < BaseHandler
       end
 
       #home_stats = player_stats(l[:home][:pitcher_id])
-      home_pitcher_era =  pitcher_stats(l[:home][:pitcher_id])[pitcher_stats(l[:home][:pitcher_id]).index{|x| x.text == 'xERA'} + 1].text.to_f
+      home_pitcher_era = pitcher_stats(l[:home][:pitcher_id]).empty? ? 0 :  pitcher_stats(l[:home][:pitcher_id])[pitcher_stats(l[:home][:pitcher_id]).index{|x| x.text == 'xERA'} + 1].text.to_f
       #python_script = './statcast.py'
       #home_pitcher_era = `python3 #{python_script} #{l[:home][:pitcher_id]} 2024`.split("\n").last.to_f
 
 
       #away_stats = player_stats(l[:away][:pitcher_id])
-      away_pitcher_era = pitcher_stats(l[:away][:pitcher_id])[pitcher_stats(l[:away][:pitcher_id]).index{|x| x.text == 'xERA'} + 1].text.to_f
+      away_pitcher_era = pitcher_stats(l[:away][:pitcher_id]).empty? ? 0 : pitcher_stats(l[:away][:pitcher_id])[pitcher_stats(l[:away][:pitcher_id]).index{|x| x.text == 'xERA'} + 1].text.to_f
       #away_pitcher_era = `python3 #{python_script} #{l[:away][:pitcher_id]} 2024`.split("\n").last.to_f
 
       puts "Warning!!! #{l[:home][:pitcher_name]} has no ERA" if home_pitcher_era&.zero?
@@ -90,26 +90,25 @@ class FantasyDataHandler < BaseHandler
             era_warning: away_pitcher_era&.zero?
             #avg_ko: player_stats(l[:away][:pitcher_id])['Data'].first['PitchingStrikeouts'] / player_stats(l[:away][:pitcher_id])['Data'].first['Games'].to_f
           },
-          home_avg_rbi: l[:home][:player_ids].map { |rb| player_stats(rb)&.children.to_a[10]&.text.to_f / player_stats(rb)&.children.to_a[3]&.text.to_f },
-          away_avg_rbi: l[:away][:player_ids].map { |rb| player_stats(rb)&.children.to_a[10]&.text.to_f / player_stats(rb)&.children.to_a[3]&.text.to_f },
+          home_avg_rbi: l[:home][:player_ids].map { |rb| player_stats(rb)&.children.to_a[11]&.text.to_f / player_stats(rb)&.children.to_a[3]&.text.to_f },
+          away_avg_rbi: l[:away][:player_ids].map { |rb| player_stats(rb)&.children.to_a[11]&.text.to_f / player_stats(rb)&.children.to_a[3]&.text.to_f },
           home_odd: nil,
           away_odd: nil
         }
     end
-    selenium_driver.close
+    selenium_driver.quit
     res
   end
 
   def player_stats(player_id)
     @cached_stats[player_id] || begin
       d = HTTParty.get("https://fantasydata.com/mlb/a-b-fantasy/#{player_id}", timeout: 120)
-
       @cached_stats[player_id] =
         #HTTParty.post("https://fantasydata.com/MLB_Player/PlayerSeasonStats?sort=&page=1&pageSize=50&group=&filter=&playerid=#{player_id}&season=2024&scope=1", timeout: 120)
         Nokogiri::HTML(d.body).xpath("//*[@class='d-inline-block']")[1].
         children[1].
         children[7].
-        children.select{|x| x&.children&.first&.children&.first&.text == '2024'}.first
+        children.select{|x| x&.children&.first&.children&.first&.text == '2025'}.first
         @cached_stats[player_id]
     end
   end
@@ -126,9 +125,13 @@ class FantasyDataHandler < BaseHandler
   def pitcher_stats(player_id)
     @cached_stats[player_id] || begin
       selenium_driver.navigate.to player_stat_url(player_id)
-      elements = selenium_driver.find_element(id: "percentile-slider-viz").attribute("innerHTML")
+      elements = selenium_driver.find_element(id: "percentile-slider-viz")&.attribute("innerHTML")
       @cached_stats[player_id] = Nokogiri::XML(elements).xpath("//text")
-      @cached_stats[player_id]
+    rescue
+      @cached_stats[player_id] = []
+    ensure
+      #selenium_driver.quit
+      return @cached_stats[player_id]
     end
   end
 
