@@ -26,14 +26,14 @@ FunctionsFramework.http "main" do |request|
   handler.stats.each do |s|
     next unless s[:home_pitcher][:era] && s[:away_pitcher][:era]
 
-    puts "Simulating games..."
+    #puts "Simulating games..."
     res = []
     15000.times do
       res << simulate_match(s).merge(s)
     end
     final_results = res.select{ |x| x[:home] != x[:away]}
     a = handler.extract_proposals(final_results)
-    pp a
+    pp a #if a[:home] > 70 || a[:away] > 70
     proposals << a
   end
   handler.export_to_csv(proposals)
