@@ -24,10 +24,6 @@ class BaseHandler
           game[:o75].to_s.gsub('.', ','),
           game[:o85].to_s.gsub('.', ','),
           game[:o95].to_s.gsub('.', ','),
-          (game[:home_odd].nil? || game[:away_odd].nil?) ?
-            '' : (
-              game[:home] > game[:away] ?
-                (100.0/game[:home_odd]).to_s.gsub('.', ',') : (100.0/game[:away_odd]).to_s.gsub('.', ',')),
           game[:both_scored].to_s.gsub('.', ','),
           game[:most_possible_runs_home].to_s.gsub('.', ','),
           game[:most_possible_runs_away].to_s.gsub('.', ','),
@@ -55,8 +51,6 @@ class BaseHandler
       o75: (all_results.count { |x| (x[:home] + x[:away]) > 7.5 } / all_results.count.to_f) * 100,
       o85: (all_results.count { |x| (x[:home] + x[:away]) > 8.5 } / all_results.count.to_f) * 100,
       o95: (all_results.count { |x| (x[:home] + x[:away]) > 9.5 } / all_results.count.to_f) * 100,
-      home_odd: all_results.first[:home_odd],
-      away_odd: all_results.first[:away_odd],
       both_scored: (all_results.count { |x| x[:home] > 0 && x[:away] > 0 } / all_results.count.to_f) * 100,
       most_possible_runs_home: all_results.map { |x| x[:home].round }.tally.max_by { |_, v| v }&.first,
       most_possible_runs_away: all_results.map { |x| x[:away].round }.tally.max_by { |_, v| v }&.first

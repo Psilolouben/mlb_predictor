@@ -49,8 +49,6 @@ class FantasyDataHandler < BaseHandler
     res = lineups.each_with_object([]) do |l, arr|
       @cached_stats = {}
       puts "Fetching stats for #{l[:home][:name]} - #{l[:away][:name]}..."
-      home_odd = todays_odds.find{|x| x[:home] == l[:home][:name] || x[:away] == l[:away][:name]}&.dig(:home_odd)
-      away_odd = todays_odds.find{|x| x[:home] == l[:home][:name] || x[:away] == l[:away][:name]}&.dig(:away_odd)
 
       unless l[:home][:pitcher_id] && l[:away][:pitcher_id]
         puts 'Pitcher not found, match will be skipped'
@@ -88,9 +86,7 @@ class FantasyDataHandler < BaseHandler
             era_warning: away_pitcher_era&.zero?
           },
           home_avg_rbi: l[:home][:player_ids].map { |rb| s = player_stats(rb); s&.children.to_a[11]&.text.to_f.then { |v| g = s&.children.to_a[3]&.text.to_f; g&.positive? ? v / g : nil } }.compact.select { |x| x.finite? && x > 0 },
-          away_avg_rbi: l[:away][:player_ids].map { |rb| s = player_stats(rb); s&.children.to_a[11]&.text.to_f.then { |v| g = s&.children.to_a[3]&.text.to_f; g&.positive? ? v / g : nil } }.compact.select { |x| x.finite? && x > 0 },
-          home_odd: home_odd,
-          away_odd: away_odd
+          away_avg_rbi: l[:away][:player_ids].map { |rb| s = player_stats(rb); s&.children.to_a[11]&.text.to_f.then { |v| g = s&.children.to_a[3]&.text.to_f; g&.positive? ? v / g : nil } }.compact.select { |x| x.finite? && x > 0 }
         }
     end
     selenium_driver.quit
@@ -132,24 +128,6 @@ class FantasyDataHandler < BaseHandler
     ensure
       #selenium_driver.quit
       return @cached_stats[player_id]
-    end
-  end
-
-  def todays_odds
-    @todays_odds ||= begin
-      result = HTTParty.get(ODDS_URL, timeout: 120).parsed_response
-      result.first['betViews'].first['items'].map do |odd|
-        next if odd['isLive']
-        {
-          home: odd['additionalCaptions']['competitor1'].split('(').first.split(' ').first,
-          away: odd['additionalCaptions']['competitor2'].split('(').first.split(' ').first,
-          home_odd: odd['markets'].first&.dig('betItems')&.first&.dig('price'),
-          away_odd: odd['markets'].first&.dig('betItems')&.last&.dig('price')
-        }
-      end.compact
-    rescue => e
-      puts "Warning: could not fetch odds: #{e.message}"
-      []
     end
   end
 
