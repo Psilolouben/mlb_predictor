@@ -16,4 +16,5 @@ gem 'mutex_m'
 gem 'nokogiri'
 gem 'selenium-webdriver'
 gem 'webdriver_manager'
+gem 'net-smtp'
 
