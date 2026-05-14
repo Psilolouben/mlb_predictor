@@ -61,10 +61,14 @@ class FantasyDataHandler < BaseHandler
       home_nodes = pitcher_stats(l[:home][:pitcher_id])
       away_nodes = pitcher_stats(l[:away][:pitcher_id])
 
-      home_pitcher_era = extract_pitcher_stat(home_nodes, 'xERA')
-      away_pitcher_era = extract_pitcher_stat(away_nodes, 'xERA')
-      home_pitcher_k_rate = extract_pitcher_stat(home_nodes, 'K %') / 100.0
-      away_pitcher_k_rate = extract_pitcher_stat(away_nodes, 'K %') / 100.0
+      home_pitcher_era       = extract_pitcher_stat(home_nodes, 'xERA')
+      away_pitcher_era       = extract_pitcher_stat(away_nodes, 'xERA')
+      home_pitcher_k_rate    = extract_pitcher_stat(home_nodes, 'K %') / 100.0
+      away_pitcher_k_rate    = extract_pitcher_stat(away_nodes, 'K %') / 100.0
+      home_pitcher_bb_rate   = extract_pitcher_stat(home_nodes, 'BB %') / 100.0
+      away_pitcher_bb_rate   = extract_pitcher_stat(away_nodes, 'BB %') / 100.0
+      home_pitcher_hard_hit  = extract_pitcher_stat(home_nodes, 'Hard Hit%') / 100.0
+      away_pitcher_hard_hit  = extract_pitcher_stat(away_nodes, 'Hard Hit%') / 100.0
 
       puts "Warning!!! #{l[:home][:pitcher_name]} has no ERA" if home_pitcher_era&.zero?
       puts "Warning!!! #{l[:away][:pitcher_name]} has no ERA" if away_pitcher_era&.zero?
@@ -74,16 +78,20 @@ class FantasyDataHandler < BaseHandler
           home_team: l[:home][:name],
           away_team: l[:away][:name],
           home_pitcher: {
-            era: home_pitcher_era,
-            k_rate: home_pitcher_k_rate,
-            name: l[:home][:pitcher_name],
-            era_warning: home_pitcher_era&.zero?
+            era:          home_pitcher_era,
+            k_rate:       home_pitcher_k_rate,
+            bb_rate:      home_pitcher_bb_rate,
+            hard_hit_pct: home_pitcher_hard_hit,
+            name:         l[:home][:pitcher_name],
+            era_warning:  home_pitcher_era&.zero?
           },
           away_pitcher: {
-            era: away_pitcher_era,
-            k_rate: away_pitcher_k_rate,
-            name: l[:away][:pitcher_name],
-            era_warning: away_pitcher_era&.zero?
+            era:          away_pitcher_era,
+            k_rate:       away_pitcher_k_rate,
+            bb_rate:      away_pitcher_bb_rate,
+            hard_hit_pct: away_pitcher_hard_hit,
+            name:         l[:away][:pitcher_name],
+            era_warning:  away_pitcher_era&.zero?
           },
           home_avg_rbi: l[:home][:player_ids].map { |rb| s = player_stats(rb); s&.children.to_a[11]&.text.to_f.then { |v| g = s&.children.to_a[3]&.text.to_f; g&.positive? ? v / g : nil } }.compact.select { |x| x.finite? && x > 0 },
           away_avg_rbi: l[:away][:player_ids].map { |rb| s = player_stats(rb); s&.children.to_a[11]&.text.to_f.then { |v| g = s&.children.to_a[3]&.text.to_f; g&.positive? ? v / g : nil } }.compact.select { |x| x.finite? && x > 0 }
@@ -101,7 +109,7 @@ class FantasyDataHandler < BaseHandler
         Nokogiri::HTML(d.body).xpath("//*[@class='d-inline-block']")[1]
           &.children&.[](1)
           &.children&.[](7)
-          &.children&.select{|x| x&.children&.first&.children&.first&.text == Date.today.year.to_s}
+          &.children&.select{|x| x&.children&.first&.children&.first&.text == PROPOSAL_DATE.year.to_s}
           &.first
         @cached_stats[player_id]
     end
@@ -132,7 +140,7 @@ class FantasyDataHandler < BaseHandler
   end
 
   def games_url
-    "https://fantasydata.com/mlb/daily-lineups?date=#{Date.today.to_s}"
+    "https://fantasydata.com/mlb/daily-lineups?date=#{PROPOSAL_DATE.to_s}"
   end
 
   def player_stat_url(player_id)
@@ -167,12 +175,7 @@ class FantasyDataHandler < BaseHandler
   end
 
   def savant_games_url
-    "https://baseballsavant.mlb.com/schedule?date=#{Date.today.to_s}"
+    "https://baseballsavant.mlb.com/schedule?date=#{PROPOSAL_DATE.to_s}"
   end
 
-  def extract_pitcher_stat(nodes, label)
-    return 0 if nodes.empty?
-    idx = nodes.index { |x| x.text == label }
-    idx ? nodes[idx + 1].text.to_f : 0
-  end
 end

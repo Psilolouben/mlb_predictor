@@ -14,24 +14,37 @@ class BaseballSavantHandler < BaseHandler
       else
         puts "#{l[:home][:pitcher_name]} vs #{l[:away][:pitcher_name]}"
       end
-      home_pitcher_era = player_stats(l[:home][:pitcher_id])[player_stats(l[:home][:pitcher_id]).index{|x| x.text == 'xERA'} + 1].text.to_f
-      away_pitcher_era = player_stats(l[:away][:pitcher_id])[player_stats(l[:away][:pitcher_id]).index{|x| x.text == 'xERA'} + 1].text.to_f
+      home_nodes = player_stats(l[:home][:pitcher_id])
+      away_nodes = player_stats(l[:away][:pitcher_id])
+
+      home_pitcher_era      = extract_pitcher_stat(home_nodes, 'xERA')
+      away_pitcher_era      = extract_pitcher_stat(away_nodes, 'xERA')
+      home_pitcher_k_rate   = extract_pitcher_stat(home_nodes, 'K %') / 100.0
+      away_pitcher_k_rate   = extract_pitcher_stat(away_nodes, 'K %') / 100.0
+      home_pitcher_bb_rate  = extract_pitcher_stat(home_nodes, 'BB %') / 100.0
+      away_pitcher_bb_rate  = extract_pitcher_stat(away_nodes, 'BB %') / 100.0
+      home_pitcher_hard_hit = extract_pitcher_stat(home_nodes, 'Hard Hit%') / 100.0
+      away_pitcher_hard_hit = extract_pitcher_stat(away_nodes, 'Hard Hit%') / 100.0
 
       arr <<
         {
           home_team: l[:home][:name],
           away_team: l[:away][:name],
           home_pitcher: {
-            era:  home_pitcher_era,
-            name: l[:home][:pitcher_name],
-            era_warning: home_pitcher_era&.zero?
-            #avg_ko: player_stats(l[:home][:pitcher_id])['Data'].first['PitchingStrikeouts'] / player_stats(l[:home][:pitcher_id])['Data'].first['Games'].to_f
+            era:          home_pitcher_era,
+            k_rate:       home_pitcher_k_rate,
+            bb_rate:      home_pitcher_bb_rate,
+            hard_hit_pct: home_pitcher_hard_hit,
+            name:         l[:home][:pitcher_name],
+            era_warning:  home_pitcher_era&.zero?
           },
           away_pitcher: {
-            era: away_pitcher_era,
-            name: l[:away][:pitcher_name],
-            era_warning: away_pitcher_era&.zero?
-            #avg_ko: player_stats(l[:away][:pitcher_id])['Data'].first['PitchingStrikeouts'] / player_stats(l[:away][:pitcher_id])['Data'].first['Games'].to_f
+            era:          away_pitcher_era,
+            k_rate:       away_pitcher_k_rate,
+            bb_rate:      away_pitcher_bb_rate,
+            hard_hit_pct: away_pitcher_hard_hit,
+            name:         l[:away][:pitcher_name],
+            era_warning:  away_pitcher_era&.zero?
           },
           home_avg_rbi: l[:home][:player_ids].map { |rb| player_stats(rb)&.children.to_a[10]&.text.to_f / player_stats(rb)&.children.to_a[3]&.text.to_f },
           away_avg_rbi: l[:away][:player_ids].map { |rb| player_stats(rb)&.children.to_a[10]&.text.to_f / player_stats(rb)&.children.to_a[3]&.text.to_f }
@@ -78,7 +91,7 @@ class BaseballSavantHandler < BaseHandler
   end
 
   def games_url
-    "https://baseballsavant.mlb.com/schedule?date=#{Date.today.to_s}"
+    "https://baseballsavant.mlb.com/schedule?date=#{PROPOSAL_DATE.to_s}"
   end
 
   def player_stat_url(player_id)

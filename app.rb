@@ -12,10 +12,16 @@ require 'net/smtp'
 
 Dir["./handlers/*.rb"].each {|file| require file }
 
-LEAGUE_AVG_ERA = 4.20
+LEAGUE_AVG_ERA      = 4.20
+LEAGUE_AVG_HARD_HIT = 0.35  # ~35% hard hit rate is MLB average
+WALK_RUN_VALUE      = 0.33  # linear-weight run expectancy of a walk
 GMAIL_ADDRESS = 'marky.rigas@gmail.com'.freeze
+EMAIL_RECIPIENTS = [GMAIL_ADDRESS, 'christos.deliyannis@gmail.com'].freeze
+PROPOSAL_DATE = Date.today
 
 FunctionsFramework.http "main" do |request|
+  return evaluate_model if request.params['action'] == 'evaluate'
+
   handler = request.params['handler'] ?
     Object.const_get("#{request.params['handler']&.split('_')&.collect(&:capitalize)&.join}Handler").new :
     FantasyDataHandler.new
@@ -41,7 +47,7 @@ FunctionsFramework.http "main" do |request|
   tee = ->(line) { puts line; email_buf << line.gsub(/\e\[[0-9;]*m/, '') }
 
   tee.call("\n#{"═" * 52}")
-  tee.call("  MLB BET PROPOSALS — #{Date.today.strftime("%b %d, %Y")}")
+  tee.call("  MLB BET PROPOSALS — #{PROPOSAL_DATE.strftime("%b %d, %Y")}")
   tee.call("#{"═" * 52}\n")
 
   proposals.each do |x|
@@ -76,19 +82,163 @@ end
 def simulate_match(match)
   expected_home_era = Distribution::Normal.rng(match[:home_pitcher][:era]).call
   expected_away_era = Distribution::Normal.rng(match[:away_pitcher][:era]).call
-  away_k_rate = match[:away_pitcher][:k_rate] || 0
-  home_k_rate = match[:home_pitcher][:k_rate] || 0
-  home_runs = match[:home_avg_rbi].map { |x| rand < away_k_rate ? 0 : Distribution::Poisson.rng(x) }.sum
-  away_runs = match[:away_avg_rbi].map { |x| rand < home_k_rate ? 0 : Distribution::Poisson.rng(x) }.sum
+
+  away_k_rate    = match[:away_pitcher][:k_rate]    || 0
+  home_k_rate    = match[:home_pitcher][:k_rate]    || 0
+  away_bb_rate   = match[:away_pitcher][:bb_rate]   || 0
+  home_bb_rate   = match[:home_pitcher][:bb_rate]   || 0
+  away_hard_hit  = match[:away_pitcher][:hard_hit_pct].then { |v| v&.positive? ? v : LEAGUE_AVG_HARD_HIT }
+  home_hard_hit  = match[:home_pitcher][:hard_hit_pct].then { |v| v&.positive? ? v : LEAGUE_AVG_HARD_HIT }
+
+  # ERA scale boosted when pitcher allows harder-than-average contact
+  away_era_scale = (expected_away_era / LEAGUE_AVG_ERA) * (1 + (away_hard_hit - LEAGUE_AVG_HARD_HIT))
+  home_era_scale = (expected_home_era / LEAGUE_AVG_ERA) * (1 + (home_hard_hit - LEAGUE_AVG_HARD_HIT))
+
+  batter_runs = ->(avg_rbi, k_rate, bb_rate) do
+    r = rand
+    if r < k_rate
+      0
+    elsif r < k_rate + bb_rate
+      WALK_RUN_VALUE
+    else
+      Distribution::Poisson.rng(avg_rbi)
+    end
+  end
+
+  home_runs = match[:home_avg_rbi].sum { |x| batter_runs.call(x, away_k_rate, away_bb_rate) }
+  away_runs = match[:away_avg_rbi].sum { |x| batter_runs.call(x, home_k_rate, home_bb_rate) }
 
   {
-    home_team: match[:home_team],
-    away_team: match[:away_team],
-    home: [home_runs * (expected_away_era / LEAGUE_AVG_ERA), 0].max,
-    away: [away_runs * (expected_home_era / LEAGUE_AVG_ERA), 0].max,
+    home_team:    match[:home_team],
+    away_team:    match[:away_team],
+    home:         [home_runs * away_era_scale, 0].max,
+    away:         [away_runs * home_era_scale, 0].max,
     home_pitcher: match[:home_pitcher][:name],
     away_pitcher: match[:away_pitcher][:name]
   }
+end
+
+def evaluate_model
+  files = Dir.glob('proposals/*.csv').sort.reject do |f|
+    File.basename(f, '.csv') == Date.today.strftime('%Y-%m-%d')
+  end
+
+  return "No archived proposals found. Run the predictor first to build history.\n" if files.empty?
+
+  stats = Hash.new { |h, k| h[k] = { correct: 0, total: 0 } }
+  skipped = 0
+
+  files.each do |file|
+    date = File.basename(file, '.csv')
+    response = HTTParty.get(
+      'https://statsapi.mlb.com/api/v1/schedule',
+      query: { sportId: 1, date: date, hydrate: 'linescore' }
+    )
+    next unless response.success?
+
+    final_games = (response.parsed_response.dig('dates', 0, 'games') || [])
+      .select { |g| g.dig('status', 'detailedState') == 'Final' }
+
+    CSV.foreach(file, headers: true, col_sep: ';') do |row|
+      home_team    = row['home_team']
+      away_team    = row['away_team']
+      home_pitcher = row['home_pitcher']
+      away_pitcher = row['away_pitcher']
+      home_pct     = row['home_pct'].to_f
+      away_pct     = row['away_pct'].to_f
+
+      matching = final_games.select { |g|
+        teams_match?(g.dig('teams', 'home', 'team', 'name'), home_team) &&
+        teams_match?(g.dig('teams', 'away', 'team', 'name'), away_team)
+      }
+
+      if matching.empty?
+        skipped += 1
+        next
+      end
+
+      game = matching.size == 1 ? matching.first : find_game_by_pitcher(matching, home_pitcher, away_pitcher)
+
+      if game.nil?
+        skipped += 1
+        next
+      end
+
+      actual_home  = game.dig('teams', 'home', 'score').to_i
+      actual_away  = game.dig('teams', 'away', 'score').to_i
+      actual_total = actual_home + actual_away
+      home_won     = actual_home > actual_away
+
+      predicted_home_wins = home_pct > away_pct
+      stats[:win][:correct] += 1 if predicted_home_wins == home_won
+      stats[:win][:total]   += 1
+
+      if home_pct > 70 || away_pct > 70
+        stats[:win_confident][:correct] += 1 if predicted_home_wins == home_won
+        stats[:win_confident][:total]   += 1
+      end
+
+      { o75: 7.5, o85: 8.5, o95: 9.5 }.each do |key, threshold|
+        stats[key][:correct] += 1 if actual_total > threshold
+        stats[key][:total]   += 1
+      end
+
+      stats[:both][:correct] += 1 if actual_home > 0 && actual_away > 0
+      stats[:both][:total]   += 1
+    end
+  end
+
+  labels = {
+    win:           'Win (all)        ',
+    win_confident: 'Win (>70% only)  ',
+    o75:           'Over 7.5 runs    ',
+    o85:           'Over 8.5 runs    ',
+    o95:           'Over 9.5 runs    ',
+    both:          'Both scored      '
+  }
+
+  lines = []
+  lines << "#{'═' * 44}"
+  lines << '  MODEL ACCURACY REPORT'
+  lines << "  #{files.size} date(s) evaluated  |  #{skipped} unmatched"
+  lines << "#{'═' * 44}"
+  lines << ''
+  labels.each do |key, label|
+    s = stats[key]
+    if s[:total] > 0
+      pct = (s[:correct] / s[:total].to_f * 100).round(1)
+      lines << "#{label}  #{s[:correct]}/#{s[:total]}  (#{pct}%)"
+    else
+      lines << "#{label}  N/A"
+    end
+  end
+  lines << ''
+  lines.join("\n")
+end
+
+def teams_match?(api_name, csv_name)
+  return false unless api_name && csv_name
+  api_name.downcase.include?(csv_name.downcase)
+end
+
+def find_game_by_pitcher(games, home_pitcher, away_pitcher)
+  home_last = home_pitcher.to_s.split.last&.downcase
+  away_last = away_pitcher.to_s.split.last&.downcase
+
+  games.each do |game|
+    boxscore = HTTParty.get("https://statsapi.mlb.com/api/v1/game/#{game['gamePk']}/boxscore")
+    next unless boxscore.success?
+
+    home_id      = boxscore.parsed_response.dig('teams', 'home', 'pitchers', 0)
+    away_id      = boxscore.parsed_response.dig('teams', 'away', 'pitchers', 0)
+    home_starter = boxscore.parsed_response.dig('teams', 'home', 'players', "ID#{home_id}", 'person', 'fullName').to_s
+    away_starter = boxscore.parsed_response.dig('teams', 'away', 'players', "ID#{away_id}", 'person', 'fullName').to_s
+
+    return game if home_starter.downcase.include?(home_last.to_s) &&
+                   away_starter.downcase.include?(away_last.to_s)
+  end
+
+  nil
 end
 
 def send_proposals_email(body)
@@ -98,10 +248,10 @@ def send_proposals_email(body)
     return
   end
 
-  date_str = Date.today.strftime('%Y-%m-%d')
+  date_str = PROPOSAL_DATE.strftime('%Y-%m-%d')
   message = <<~MSG
     From: MLB Predictor <#{GMAIL_ADDRESS}>
-    To: #{GMAIL_ADDRESS}
+    To: #{EMAIL_RECIPIENTS.join(', ')}
     Subject: Bet proposals #{date_str}
     Content-Type: text/plain; charset=UTF-8
 
@@ -111,9 +261,9 @@ def send_proposals_email(body)
   smtp = Net::SMTP.new('smtp.gmail.com', 587)
   smtp.enable_starttls
   smtp.start('localhost', GMAIL_ADDRESS, password, :login) do |s|
-    s.send_message(message, GMAIL_ADDRESS, GMAIL_ADDRESS)
+    s.send_message(message, GMAIL_ADDRESS, EMAIL_RECIPIENTS)
   end
-  puts "Email sent to #{GMAIL_ADDRESS}"
+  puts "Email sent to #{EMAIL_RECIPIENTS.join(', ')}"
 rescue => e
   puts "Email failed: #{e.message}"
 end
