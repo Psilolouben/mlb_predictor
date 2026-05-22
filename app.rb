@@ -13,11 +13,14 @@ require 'net/smtp'
 Dir["./handlers/*.rb"].each {|file| require file }
 
 LEAGUE_AVG_ERA      = 4.20
-LEAGUE_AVG_HARD_HIT = 0.35  # ~35% hard hit rate is MLB average
-WALK_RUN_VALUE      = 0.33  # linear-weight run expectancy of a walk
+LEAGUE_AVG_HARD_HIT = 0.35   # ~35% hard hit rate is MLB average
+LEAGUE_AVG_BARREL   = 0.078  # ~7.8% barrel rate is MLB average
+LEAGUE_AVG_WHIFF    = 0.245  # ~24.5% whiff rate is MLB average
+LEAGUE_AVG_XWOBA    = 0.315  # ~.315 xwOBA is MLB average
+WALK_RUN_VALUE      = 0.33   # linear-weight run expectancy of a walk
 GMAIL_ADDRESS = 'marky.rigas@gmail.com'.freeze
 EMAIL_RECIPIENTS = [GMAIL_ADDRESS, 'christos.deliyannis@gmail.com'].freeze
-PROPOSAL_DATE = Date.today
+PROPOSAL_DATE = Time.now.utc.then { |t| (t - 4 * 3600).to_date } # ET (UTC-4, EDT)
 
 FunctionsFramework.http "main" do |request|
   return evaluate_model if request.params['action'] == 'evaluate'
@@ -88,12 +91,24 @@ def simulate_match(match)
   home_k_rate    = match[:home_pitcher][:k_rate]    || 0
   away_bb_rate   = match[:away_pitcher][:bb_rate]   || 0
   home_bb_rate   = match[:home_pitcher][:bb_rate]   || 0
-  away_hard_hit  = match[:away_pitcher][:hard_hit_pct].then { |v| v&.positive? ? v : LEAGUE_AVG_HARD_HIT }
-  home_hard_hit  = match[:home_pitcher][:hard_hit_pct].then { |v| v&.positive? ? v : LEAGUE_AVG_HARD_HIT }
+  away_barrel    = match[:away_pitcher][:barrel_pct].then { |v| v&.positive? ? v : LEAGUE_AVG_BARREL }
+  home_barrel    = match[:home_pitcher][:barrel_pct].then { |v| v&.positive? ? v : LEAGUE_AVG_BARREL }
+  away_whiff     = match[:away_pitcher][:whiff_pct].then  { |v| v&.positive? ? v : LEAGUE_AVG_WHIFF }
+  home_whiff     = match[:home_pitcher][:whiff_pct].then  { |v| v&.positive? ? v : LEAGUE_AVG_WHIFF }
+  away_xwoba     = match[:away_pitcher][:xwoba].then      { |v| v&.positive? ? v : LEAGUE_AVG_XWOBA }
+  home_xwoba     = match[:home_pitcher][:xwoba].then      { |v| v&.positive? ? v : LEAGUE_AVG_XWOBA }
 
-  # ERA scale boosted when pitcher allows harder-than-average contact
-  away_era_scale = (expected_away_era / LEAGUE_AVG_ERA) * (1 + (away_hard_hit - LEAGUE_AVG_HARD_HIT))
-  home_era_scale = (expected_home_era / LEAGUE_AVG_ERA) * (1 + (home_hard_hit - LEAGUE_AVG_HARD_HIT))
+  # Blend sampled ERA (60%) with an xwOBA-derived ERA estimate (40%) for stability
+  away_blended_era = expected_away_era * 0.6 + (away_xwoba / LEAGUE_AVG_XWOBA) * LEAGUE_AVG_ERA * 0.4
+  home_blended_era = expected_home_era * 0.6 + (home_xwoba / LEAGUE_AVG_XWOBA) * LEAGUE_AVG_ERA * 0.4
+
+  # ERA scale uses barrel% (higher signal than hard hit%) to adjust for contact quality
+  away_era_scale = (away_blended_era / LEAGUE_AVG_ERA) * (1 + (away_barrel - LEAGUE_AVG_BARREL) * 2)
+  home_era_scale = (home_blended_era / LEAGUE_AVG_ERA) * (1 + (home_barrel - LEAGUE_AVG_BARREL) * 2)
+
+  # Whiff% makes K rate more responsive to current form than K% alone
+  away_effective_k = [away_k_rate * (away_whiff / LEAGUE_AVG_WHIFF), 0.5].min
+  home_effective_k = [home_k_rate * (home_whiff / LEAGUE_AVG_WHIFF), 0.5].min
 
   batter_runs = ->(avg_rbi, k_rate, bb_rate) do
     r = rand
@@ -106,8 +121,8 @@ def simulate_match(match)
     end
   end
 
-  home_runs = match[:home_avg_rbi].sum { |x| batter_runs.call(x, away_k_rate, away_bb_rate) }
-  away_runs = match[:away_avg_rbi].sum { |x| batter_runs.call(x, home_k_rate, home_bb_rate) }
+  home_runs = match[:home_avg_rbi].sum { |x| batter_runs.call(x, away_effective_k, away_bb_rate) }
+  away_runs = match[:away_avg_rbi].sum { |x| batter_runs.call(x, home_effective_k, home_bb_rate) }
 
   {
     home_team:    match[:home_team],

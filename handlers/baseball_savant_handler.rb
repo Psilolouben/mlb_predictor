@@ -25,6 +25,12 @@ class BaseballSavantHandler < BaseHandler
       away_pitcher_bb_rate  = extract_pitcher_stat(away_nodes, 'BB %') / 100.0
       home_pitcher_hard_hit = extract_pitcher_stat(home_nodes, 'Hard Hit%') / 100.0
       away_pitcher_hard_hit = extract_pitcher_stat(away_nodes, 'Hard Hit%') / 100.0
+      home_pitcher_barrel   = extract_pitcher_stat(home_nodes, 'Barrel %') / 100.0
+      away_pitcher_barrel   = extract_pitcher_stat(away_nodes, 'Barrel %') / 100.0
+      home_pitcher_whiff    = extract_pitcher_stat(home_nodes, 'Whiff %') / 100.0
+      away_pitcher_whiff    = extract_pitcher_stat(away_nodes, 'Whiff %') / 100.0
+      home_pitcher_xwoba    = extract_pitcher_stat(home_nodes, 'xwOBA')
+      away_pitcher_xwoba    = extract_pitcher_stat(away_nodes, 'xwOBA')
 
       arr <<
         {
@@ -35,6 +41,9 @@ class BaseballSavantHandler < BaseHandler
             k_rate:       home_pitcher_k_rate,
             bb_rate:      home_pitcher_bb_rate,
             hard_hit_pct: home_pitcher_hard_hit,
+            barrel_pct:   home_pitcher_barrel,
+            whiff_pct:    home_pitcher_whiff,
+            xwoba:        home_pitcher_xwoba,
             name:         l[:home][:pitcher_name],
             era_warning:  home_pitcher_era&.zero?
           },
@@ -43,6 +52,9 @@ class BaseballSavantHandler < BaseHandler
             k_rate:       away_pitcher_k_rate,
             bb_rate:      away_pitcher_bb_rate,
             hard_hit_pct: away_pitcher_hard_hit,
+            barrel_pct:   away_pitcher_barrel,
+            whiff_pct:    away_pitcher_whiff,
+            xwoba:        away_pitcher_xwoba,
             name:         l[:away][:pitcher_name],
             era_warning:  away_pitcher_era&.zero?
           },
