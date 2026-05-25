@@ -25,21 +25,25 @@ class FantasyDataHandler < BaseHandler
       away_team = team_text.split('@').first.gsub(/[[:space:]]/, '')
 
       match = savant_lineups.select{|x| x[:home][:name].split(' ').join.include?(home_team)}.first
-      home_pitcher_id = match[:home][:name].split(' ').join.include?(home_team) ? match[:home][:pitcher_id] : match[:away][:pitcher_id]
-      away_pitcher_id = match[:home][:name].split(' ').join.include?(away_team) ? match[:home][:pitcher_id] : match[:away][:pitcher_id]
+      home_match_is_home = match[:home][:name].split(' ').join.include?(home_team)
+      home_pitcher_id   = home_match_is_home ? match[:home][:pitcher_id]   : match[:away][:pitcher_id]
+      home_pitcher_name = home_match_is_home ? match[:home][:pitcher_name] : match[:away][:pitcher_name]
+      away_match_is_home = match[:home][:name].split(' ').join.include?(away_team)
+      away_pitcher_id   = away_match_is_home ? match[:home][:pitcher_id]   : match[:away][:pitcher_id]
+      away_pitcher_name = away_match_is_home ? match[:home][:pitcher_name] : match[:away][:pitcher_name]
 
       {
         id: 'koko',
         home: {
           name: home_team,
           pitcher_id: home_pitcher_id,
-          pitcher_name: match[:home][:pitcher_name],
+          pitcher_name: home_pitcher_name,
           player_ids: home_players
         },
         away: {
           name: away_team,
           pitcher_id: away_pitcher_id,
-          pitcher_name: match[:away][:pitcher_name],
+          pitcher_name: away_pitcher_name,
           player_ids: away_players
         }
       }
@@ -122,7 +126,7 @@ class FantasyDataHandler < BaseHandler
         Nokogiri::HTML(d.body).xpath("//*[@class='d-inline-block']")[1]
           &.children&.[](1)
           &.children&.[](7)
-          &.children&.select{|x| x&.children&.first&.children&.first&.text == PROPOSAL_DATE.year.to_s}
+          &.children&.select{|x| x&.children&.first&.children&.first&.text == @proposal_date.year.to_s}
           &.first
         @cached_stats[player_id]
     end
@@ -153,7 +157,7 @@ class FantasyDataHandler < BaseHandler
   end
 
   def games_url
-    "https://fantasydata.com/mlb/daily-lineups?date=#{PROPOSAL_DATE.to_s}"
+    "https://fantasydata.com/mlb/daily-lineups?date=#{@proposal_date.to_s}"
   end
 
   def player_stat_url(player_id)
@@ -188,7 +192,7 @@ class FantasyDataHandler < BaseHandler
   end
 
   def savant_games_url
-    "https://baseballsavant.mlb.com/schedule?date=#{PROPOSAL_DATE.to_s}"
+    "https://baseballsavant.mlb.com/schedule?date=#{@proposal_date.to_s}"
   end
 
 end
