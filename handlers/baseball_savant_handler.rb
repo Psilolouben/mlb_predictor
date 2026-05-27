@@ -103,7 +103,7 @@ class BaseballSavantHandler < BaseHandler
   end
 
   def games_url
-    "https://baseballsavant.mlb.com/schedule?date=#{PROPOSAL_DATE.to_s}"
+    "https://baseballsavant.mlb.com/schedule?date=#{@proposal_date.to_s}"
   end
 
   def player_stat_url(player_id)

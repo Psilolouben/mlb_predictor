@@ -1,7 +1,11 @@
 class BaseHandler
 
+  def initialize(date)
+    @proposal_date = date
+  end
+
   def csv_filename
-    "proposals/#{PROPOSAL_DATE.strftime('%Y-%m-%d')}.csv"
+    "proposals/#{@proposal_date.strftime('%Y-%m-%d')}.csv"
   end
 
   def upload_to_bucket
@@ -27,7 +31,7 @@ class BaseHandler
               'home_pct', 'away_pct', 'o75', 'o85', 'o95', 'both_scored', 'avg_total_runs']
       proposals.each do |game|
         csv << [
-          PROPOSAL_DATE.strftime('%Y-%m-%d'),
+          @proposal_date.strftime('%Y-%m-%d'),
           game[:home_team],
           game[:away_team],
           game[:home_pitcher][:name],

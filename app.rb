@@ -12,6 +12,8 @@ require 'net/smtp'
 
 Dir["./handlers/*.rb"].each {|file| require file }
 
+def et_today = Time.now.utc.then { |t| (t - 4 * 3600).to_date }
+
 LEAGUE_AVG_ERA      = 4.20
 LEAGUE_AVG_HARD_HIT = 0.35   # ~35% hard hit rate is MLB average
 LEAGUE_AVG_BARREL   = 0.078  # ~7.8% barrel rate is MLB average
@@ -20,67 +22,70 @@ LEAGUE_AVG_XWOBA    = 0.315  # ~.315 xwOBA is MLB average
 WALK_RUN_VALUE      = 0.33   # linear-weight run expectancy of a walk
 GMAIL_ADDRESS = 'marky.rigas@gmail.com'.freeze
 EMAIL_RECIPIENTS = [GMAIL_ADDRESS, 'christos.deliyannis@gmail.com'].freeze
-PROPOSAL_DATE = Time.now.utc.then { |t| (t - 4 * 3600).to_date } # ET (UTC-4, EDT)
-
 FunctionsFramework.http "main" do |request|
   return evaluate_model if request.params['action'] == 'evaluate'
 
-  handler = request.params['handler'] ?
-    Object.const_get("#{request.params['handler']&.split('_')&.collect(&:capitalize)&.join}Handler").new :
-    FantasyDataHandler.new
-
-  puts "Using #{handler.class}"
-
-  proposals = []
-
-  handler.stats.each do |s|
-    next unless s[:home_pitcher][:era] && s[:away_pitcher][:era]
-
-    #puts "Simulating games..."
-    res = []
-    15000.times do
-      res << simulate_match(s).merge(s)
-    end
-    win_results = res.select { |x| x[:home] != x[:away] }
-    a = handler.extract_proposals(res, win_results)
-    proposals << a if a
-  end
+  handler_class = request.params['handler'] ?
+    Object.const_get("#{request.params['handler']&.split('_')&.collect(&:capitalize)&.join}Handler") :
+    FantasyDataHandler
 
   email_buf = []
   tee = ->(line) { puts line; email_buf << line.gsub(/\e\[[0-9;]*m/, '') }
+  uploaded_urls = []
 
-  tee.call("\n#{"═" * 52}")
-  tee.call("  MLB BET PROPOSALS — #{PROPOSAL_DATE.strftime("%b %d, %Y")}")
-  tee.call("#{"═" * 52}\n")
+  [et_today].each do |date|
+    handler = handler_class.new(date)
+    puts "Using #{handler.class} for #{date}"
 
-  proposals.each do |x|
-    next if x[:home_pitcher][:era_warning] || x[:away_pitcher][:era_warning]
+    proposals = []
 
-    [[x[:home_team], x[:home], x[:away]], [x[:away_team], x[:away], x[:home]]].each do |team, poss, opp_poss|
-      next unless poss > 70
+    handler.stats.each do |s|
+      next unless s[:home_pitcher][:era] && s[:away_pitcher][:era]
 
-      is_home     = team == x[:home_team]
-      pitcher     = is_home ? x[:home_pitcher][:name] : x[:away_pitcher][:name]
-      opp_pitcher = is_home ? x[:away_pitcher][:name] : x[:home_pitcher][:name]
-      color       = poss > 85 ? "\e[32m" : "\e[33m"
-      bar         = ("█" * (poss / 10).round).ljust(10)
-
-      matchup = "#{x[:away_team]} @ #{x[:home_team]}"
-      tee.call("#{color}┌#{"─" * 50}┐")
-      tee.call("│  %-48s│" % matchup)
-      tee.call("│  %-48s│" % "#{team.upcase}  |  #{pitcher} vs #{opp_pitcher}")
-      tee.call("│  Win:  #{bar}  #{poss.round(1).to_s.rjust(5)}%#{" " * 23}│")
-      tee.call("│  Runs: O7.5 #{x[:o75].round(1).to_s.rjust(5)}%  O8.5 #{x[:o85].round(1).to_s.rjust(5)}%  O9.5 #{x[:o95].round(1).to_s.rjust(5)}%#{" " * 4}│")
-      tee.call("│  Both scored: %-34s│" % "#{x[:both_scored].round(1)}%")
-      tee.call("│  Avg total runs: %-31s│" % "#{x[:avg_total_runs].round(2)}  (#{x[:most_possible_runs_home]}-#{x[:most_possible_runs_away]} most likely)")
-      tee.call("└#{"─" * 50}┘\n")
+      res = []
+      15000.times do
+        res << simulate_match(s).merge(s)
+      end
+      win_results = res.select { |x| x[:home] != x[:away] }
+      a = handler.extract_proposals(res, win_results)
+      proposals << a if a
     end
-  end;0
+
+    tee.call("\n#{"═" * 52}")
+    tee.call("  MLB BET PROPOSALS — #{date.strftime("%b %d, %Y")}")
+    tee.call("#{"═" * 52}\n")
+
+    proposals.each do |x|
+      next if x[:home_pitcher][:era_warning] || x[:away_pitcher][:era_warning]
+
+      [[x[:home_team], x[:home], x[:away]], [x[:away_team], x[:away], x[:home]]].each do |team, poss, opp_poss|
+        next unless poss > 70
+
+        is_home     = team == x[:home_team]
+        pitcher     = is_home ? x[:home_pitcher][:name] : x[:away_pitcher][:name]
+        opp_pitcher = is_home ? x[:away_pitcher][:name] : x[:home_pitcher][:name]
+        color       = poss > 85 ? "\e[32m" : "\e[33m"
+        bar         = ("█" * (poss / 10).round).ljust(10)
+
+        matchup = "#{x[:away_team]} @ #{x[:home_team]}"
+        tee.call("#{color}┌#{"─" * 50}┐")
+        tee.call("│  %-48s│" % matchup)
+        tee.call("│  %-48s│" % "#{team.upcase}  |  #{pitcher} vs #{opp_pitcher}")
+        tee.call("│  Win:  #{bar}  #{poss.round(1).to_s.rjust(5)}%#{" " * 23}│")
+        tee.call("│  Runs: O7.5 #{x[:o75].round(1).to_s.rjust(5)}%  O8.5 #{x[:o85].round(1).to_s.rjust(5)}%  O9.5 #{x[:o95].round(1).to_s.rjust(5)}%#{" " * 4}│")
+        tee.call("│  Both scored: %-34s│" % "#{x[:both_scored].round(1)}%")
+        tee.call("│  Avg total runs: %-31s│" % "#{x[:avg_total_runs].round(2)}  (#{x[:most_possible_runs_home]}-#{x[:most_possible_runs_away]} most likely)")
+        tee.call("└#{"─" * 50}┘\n")
+      end
+    end
+
+    handler.export_to_csv(proposals)
+    uploaded_urls << handler.upload_to_bucket
+  end
 
   send_proposals_email(email_buf.join("\n")) unless email_buf.empty?
 
-  handler.export_to_csv(proposals)
-  "CSV file here -> #{handler.upload_to_bucket}"
+  uploaded_urls.join("\n")
 end
 
 def simulate_match(match)
@@ -264,7 +269,7 @@ def send_proposals_email(body)
     return
   end
 
-  date_str = PROPOSAL_DATE.strftime('%Y-%m-%d')
+  date_str = et_today.strftime('%Y-%m-%d')
   message = <<~MSG
     From: MLB Predictor <#{GMAIL_ADDRESS}>
     To: #{EMAIL_RECIPIENTS.join(', ')}
