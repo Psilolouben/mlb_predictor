@@ -5,7 +5,6 @@ require 'distribution'
 require 'date'
 require 'json'
 require 'csv'
-require "google/cloud/storage"
 require 'nokogiri'
 require 'selenium-webdriver'
 require 'net/smtp'
@@ -31,7 +30,6 @@ FunctionsFramework.http "main" do |request|
 
   email_buf = []
   tee = ->(line) { puts line; email_buf << line.gsub(/\e\[[0-9;]*m/, '') }
-  uploaded_urls = []
 
   [et_today].each do |date|
     handler = handler_class.new(date)
@@ -80,12 +78,10 @@ FunctionsFramework.http "main" do |request|
     end
 
     handler.export_to_csv(proposals)
-    uploaded_urls << handler.upload_to_bucket
   end
 
   send_proposals_email(email_buf.join("\n")) unless email_buf.empty?
-
-  uploaded_urls.join("\n")
+  "OK"
 end
 
 def simulate_match(match)
