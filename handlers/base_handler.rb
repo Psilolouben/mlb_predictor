@@ -8,16 +8,6 @@ class BaseHandler
     "proposals/#{@proposal_date.strftime('%Y-%m-%d')}.csv"
   end
 
-  def upload_to_bucket
-    storage = Google::Cloud::Storage.new(
-      project_id: "mlb-bet-predictor",
-      credentials: "mlb-bet-predictor-b83d3bb4dce7.json"
-    )
-    bucket = storage.bucket("gcf-v2-uploads-944915810467-us-central1")
-    a = bucket.create_file(csv_filename, csv_filename, cache_control: 'max-age=0')
-    a.public_url
-  end
-
   def extract_pitcher_stat(nodes, label)
     return 0 if nodes.empty?
     idx = nodes.index { |x| x.text == label }

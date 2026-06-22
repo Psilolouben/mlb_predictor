@@ -1,0 +1,43 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(bundle exec:*)",
+      "Bash(gem contents:*)",
+      "Bash(xargs grep:*)",
+      "WebFetch(domain:baseballsavant.mlb.com)",
+      "WebFetch(domain:fantasydata.com)",
+      "Read(//Users/marky/Projects/mlb/**)",
+      "Bash(ruby /tmp/mlb_debug.rb)",
+      "Bash(ls:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(curl -s \"https://fantasydata.com/mlb/daily-lineups?date=2026-05-22\")",
+      "Bash(grep -E \"\\\\.\\(rb|py|json|yaml|yml\\)$\")",
+      "Bash(grep:*)",
+      "Bash(curl -s \"https://baseballsavant.mlb.com/schedule?date=2026-05-24\")",
+      "Bash(curl -s \"https://statsapi.mlb.com/api/v1/schedule?sportId=1&date=2026-05-24&hydrate=linescore\")",
+      "Bash(curl -s \"https://fantasydata.com/mlb/daily-lineups?date=2026-05-26\")",
+      "Bash(curl -s \"https://baseballsavant.mlb.com/schedule?date=2026-05-26\")",
+      "Bash(curl -s \"https://statsapi.mlb.com/api/v1/schedule?sportId=1&date=2026-05-22&hydrate=linescore\")",
+      "Bash(curl -s \"https://statsapi.mlb.com/api/v1/schedule?sportId=1&date=2026-05-23&hydrate=linescore\")",
+      "Read(//Users/marky/Projects/gamerules/**)",
+      "Read(//Users/marky/.claude/projects/-Users-marky-Projects-gamerules/**)",
+      "mcp__claude_ai_n8n__search_workflows",
+      "Bash(gcloud functions:*)",
+      "Bash(gcloud projects:*)",
+      "mcp__claude_ai_n8n__get_sdk_reference",
+      "mcp__claude_ai_n8n__get_suggested_nodes",
+      "mcp__claude_ai_n8n__list_credentials",
+      "mcp__claude_ai_n8n__search_nodes",
+      "mcp__claude_ai_n8n__get_node_types",
+      "mcp__claude_ai_n8n__validate_workflow",
+      "mcp__claude_ai_n8n__create_workflow_from_code",
+      "mcp__claude_ai_n8n__search_executions",
+      "mcp__claude_ai_n8n__update_workflow",
+      "mcp__claude_ai_n8n__get_workflow_details",
+      "mcp__claude_ai_n8n__get_execution",
+      "mcp__claude_ai_n8n__publish_workflow",
+      "mcp__claude_ai_n8n__execute_workflow"
+    ]
+  }
+}
