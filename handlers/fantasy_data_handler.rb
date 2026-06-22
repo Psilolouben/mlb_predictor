@@ -75,18 +75,21 @@ class FantasyDataHandler < BaseHandler
       home_row = pitcher_statcast(l[:home][:pitcher_id])
       away_row = pitcher_statcast(l[:away][:pitcher_id])
 
+      # expected_statistics leaderboard: xera, est_woba
+      # batted_ball leaderboard: brl_pa (barrel/PA %), ev95percent (hard hit %)
+      # k_rate, bb_rate, whiff_rate not available via CSV — model falls back to league avg
       home_pitcher_era      = statcast_val(home_row, 'xera')
       away_pitcher_era      = statcast_val(away_row, 'xera')
-      home_pitcher_k_rate   = statcast_val(home_row, 'k_percent') / 100.0
-      away_pitcher_k_rate   = statcast_val(away_row, 'k_percent') / 100.0
-      home_pitcher_bb_rate  = statcast_val(home_row, 'bb_percent') / 100.0
-      away_pitcher_bb_rate  = statcast_val(away_row, 'bb_percent') / 100.0
-      home_pitcher_hard_hit = statcast_val(home_row, 'hard_hit_percent') / 100.0
-      away_pitcher_hard_hit = statcast_val(away_row, 'hard_hit_percent') / 100.0
-      home_pitcher_barrel   = statcast_val(home_row, 'barrel_batted_rate') / 100.0
-      away_pitcher_barrel   = statcast_val(away_row, 'barrel_batted_rate') / 100.0
-      home_pitcher_whiff    = statcast_val(home_row, 'whiff_percent') / 100.0
-      away_pitcher_whiff    = statcast_val(away_row, 'whiff_percent') / 100.0
+      home_pitcher_k_rate   = 0.0
+      away_pitcher_k_rate   = 0.0
+      home_pitcher_bb_rate  = 0.0
+      away_pitcher_bb_rate  = 0.0
+      home_pitcher_hard_hit = statcast_val(home_row, 'ev95percent') / 100.0
+      away_pitcher_hard_hit = statcast_val(away_row, 'ev95percent') / 100.0
+      home_pitcher_barrel   = statcast_val(home_row, 'brl_pa') / 100.0
+      away_pitcher_barrel   = statcast_val(away_row, 'brl_pa') / 100.0
+      home_pitcher_whiff    = 0.0
+      away_pitcher_whiff    = 0.0
       home_pitcher_xwoba    = statcast_val(home_row, 'est_woba')
       away_pitcher_xwoba    = statcast_val(away_row, 'est_woba')
 
@@ -124,28 +127,43 @@ class FantasyDataHandler < BaseHandler
     end
   end
 
-  # Fetches all pitcher statcast metrics in one CSV call — no Selenium needed
-  def statcast_leaderboard
-    @statcast_leaderboard ||= begin
-      url = "https://baseballsavant.mlb.com/leaderboard/statcast?type=pitcher&year=#{@proposal_date.year}&position=&team=&min=0&csv=true"
-      puts "Fetching statcast leaderboard..."
-      response = HTTParty.get(url, timeout: 30, headers: { 'User-Agent' => 'Mozilla/5.0' })
-      rows = CSV.parse(response.body, headers: true)
-      puts "Leaderboard: #{rows.length} pitchers, columns: #{rows.headers.first(12).join(', ')}"
-      rows.each_with_object({}) { |row, h| h[row['player_id'].to_s] = row }
-    rescue => e
-      puts "Failed to fetch statcast leaderboard: #{e.class} — #{e.message}"
-      {}
-    end
+  # xERA + xwOBA from expected_statistics leaderboard
+  def expected_stats_leaderboard
+    @expected_stats_leaderboard ||= fetch_leaderboard(
+      "https://baseballsavant.mlb.com/leaderboard/expected_statistics?type=pitcher&year=#{@proposal_date.year}&position=&team=&min=0&csv=true",
+      'expected_statistics'
+    )
+  end
+
+  # barrel% (brl_pa) + hard_hit% (ev95percent) from statcast batted ball leaderboard
+  def batted_ball_leaderboard
+    @batted_ball_leaderboard ||= fetch_leaderboard(
+      "https://baseballsavant.mlb.com/leaderboard/statcast?type=pitcher&year=#{@proposal_date.year}&position=&team=&min=0&csv=true",
+      'batted_ball'
+    )
+  end
+
+  def fetch_leaderboard(url, name)
+    puts "Fetching #{name} leaderboard..."
+    response = HTTParty.get(url, timeout: 30, headers: { 'User-Agent' => 'Mozilla/5.0' })
+    rows = CSV.parse(response.body.delete("\xEF\xBB\xBF"), headers: true)
+    puts "#{name}: #{rows.length} rows, columns: #{rows.headers.join(', ')}"
+    rows.each_with_object({}) { |row, h| h[row['player_id'].to_s] = row }
+  rescue => e
+    puts "Failed to fetch #{name} leaderboard: #{e.class} — #{e.message}"
+    {}
   end
 
   def pitcher_statcast(player_id)
-    row = statcast_leaderboard[player_id.to_s]
-    puts "  Statcast lookup #{player_id}: #{row ? 'found' : 'NOT FOUND'}" unless row
-    row
+    id = player_id.to_s
+    exp  = expected_stats_leaderboard[id]
+    bball = batted_ball_leaderboard[id]
+    puts "  Lookup #{player_id}: expected_stats=#{exp ? 'found' : 'MISSING'} batted_ball=#{bball ? 'found' : 'MISSING'}"
+    { expected: exp, batted_ball: bball }
   end
 
-  def statcast_val(row, key)
+  def statcast_val(data, key)
+    row = data.is_a?(Hash) ? (key == 'xera' || key == 'est_woba' ? data[:expected] : data[:batted_ball]) : data
     return 0.0 unless row && row[key]
     row[key].to_f
   end
