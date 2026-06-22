@@ -29,16 +29,18 @@ FunctionsFramework.http "main" do |request|
     Object.const_get("#{request.params['handler']&.split('_')&.collect(&:capitalize)&.join}Handler") :
     FantasyDataHandler
 
-  email_buf = []
-  tee = ->(line) { puts line; email_buf << line.gsub(/\e\[[0-9;]*m/, '') }
+  Thread.new do
+    email_buf = []
+    tee = ->(line) { puts line; email_buf << line.gsub(/\e\[[0-9;]*m/, '') }
 
-  [et_today].each do |date|
-    handler = handler_class.new(date)
-    puts "Using #{handler.class} for #{date}"
+    begin
+      [et_today].each do |date|
+        handler = handler_class.new(date)
+        puts "Using #{handler.class} for #{date}"
 
-    proposals = []
+        proposals = []
 
-    handler.stats.each do |s|
+        handler.stats.each do |s|
       next unless s[:home_pitcher][:era] && s[:away_pitcher][:era]
 
       res = []
@@ -78,11 +80,17 @@ FunctionsFramework.http "main" do |request|
       end
     end
 
-    handler.export_to_csv(proposals)
+        handler.export_to_csv(proposals)
+      end
+
+      send_proposals_email(email_buf.join("\n")) unless email_buf.empty?
+    rescue => e
+      puts "Background run failed: #{e.class} — #{e.message}"
+      puts e.backtrace.first(10).join("\n")
+    end
   end
 
-  send_proposals_email(email_buf.join("\n")) unless email_buf.empty?
-  "OK"
+  [200, {}, ["Processing started — results will be emailed to #{EMAIL_RECIPIENTS.join(', ')}"]]
 end
 
 def simulate_match(match)

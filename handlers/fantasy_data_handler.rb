@@ -158,14 +158,14 @@ class FantasyDataHandler < BaseHandler
   def pitcher_stats(player_id)
     @cached_stats[player_id] || begin
       selenium_driver.navigate.to player_stat_url(player_id)
-      wait = Selenium::WebDriver::Wait.new(timeout: 15)
+      wait = Selenium::WebDriver::Wait.new(timeout: 30)
       wait.until { selenium_driver.find_element(id: "percentile-slider-viz").attribute("innerHTML").include?("xERA") }
       elements = selenium_driver.find_element(id: "percentile-slider-viz").attribute("innerHTML")
       @cached_stats[player_id] = Nokogiri::XML(elements).xpath("//text")
-    rescue
+    rescue => e
+      puts "pitcher_stats failed for #{player_id}: #{e.class} — #{e.message}"
       @cached_stats[player_id] = []
     ensure
-      #selenium_driver.quit
       return @cached_stats[player_id]
     end
   end
