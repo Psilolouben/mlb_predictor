@@ -144,7 +144,6 @@ class FantasyDataHandler < BaseHandler
       options.args << '--no-sandbox'
       options.args << '--disable-dev-shm-usage'
       options.args << '--disable-gpu'
-      options.args << '--single-process'
       options.args << '--disable-extensions'
       options.args << '--disable-default-apps'
       options.args << '--no-first-run'
