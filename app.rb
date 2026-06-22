@@ -6,7 +6,6 @@ require 'date'
 require 'json'
 require 'csv'
 require 'nokogiri'
-require 'selenium-webdriver'
 require 'net/smtp'
 
 Dir["./handlers/*.rb"].each {|file| require file }
