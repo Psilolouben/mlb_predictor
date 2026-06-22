@@ -1,9 +1,13 @@
 require_relative './base_handler.rb'
 class FantasyDataHandler < BaseHandler
   def data
-    d = HTTParty.get(games_url,
-      headers: { 'Content-Type' => 'application/json' })
-      Nokogiri::HTML(d.body).xpath("//*[@class='lineup']")
+    selenium_driver.navigate.to games_url
+    wait = Selenium::WebDriver::Wait.new(timeout: 20)
+    wait.until { selenium_driver.find_elements(css: '.lineup').length > 0 }
+    Nokogiri::HTML(selenium_driver.page_source).xpath("//*[@class='lineup']")
+  rescue Selenium::WebDriver::Error::TimeoutError
+    puts "Timed out waiting for lineups on #{games_url}"
+    []
   end
 
   def lineups
