@@ -140,6 +140,13 @@ class FantasyDataHandler < BaseHandler
       options.args << '--no-sandbox'
       options.args << '--disable-dev-shm-usage'
       options.args << '--disable-gpu'
+      options.args << '--single-process'
+      options.args << '--disable-extensions'
+      options.args << '--disable-default-apps'
+      options.args << '--no-first-run'
+      options.args << '--disable-background-networking'
+      options.args << '--disable-sync'
+      options.args << '--js-flags=--max-old-space-size=128'
       options.binary = ENV['CHROME_BIN'] if ENV['CHROME_BIN']
       Selenium::WebDriver.for(:chrome, options: options)
     end

@@ -20,4 +20,4 @@ RUN mkdir -p proposals
 
 EXPOSE 10000
 
-CMD bundle exec functions-framework-ruby --target main --port ${PORT:-10000}
+CMD bundle exec functions-framework-ruby --target main --port ${PORT:-10000} --bind 0.0.0.0
