@@ -136,8 +136,12 @@ class FantasyDataHandler < BaseHandler
     @selenium_driver ||= begin
       options = Selenium::WebDriver::Options.chrome
       options.args << '--disable-search-engine-choice-screen'
-      options.args << 'headless'
-      driver = Selenium::WebDriver.for(:chrome, options: options)
+      options.args << '--headless'
+      options.args << '--no-sandbox'
+      options.args << '--disable-dev-shm-usage'
+      options.args << '--disable-gpu'
+      options.binary = ENV['CHROME_BIN'] if ENV['CHROME_BIN']
+      Selenium::WebDriver.for(:chrome, options: options)
     end
   end
 
