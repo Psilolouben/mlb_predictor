@@ -1,4 +1,5 @@
 require_relative './base_handler.rb'
+
 class FantasyDataHandler < BaseHandler
   def data
     selenium_driver.navigate.to games_url
@@ -55,8 +56,13 @@ class FantasyDataHandler < BaseHandler
   end
 
   def stats
-    res = lineups.each_with_object([]) do |l, arr|
-      @cached_stats = {}
+    all_lineups = lineups
+    selenium_driver.quit rescue nil
+    @selenium_driver = nil
+
+    @batter_stats_cache = {}
+
+    all_lineups.each_with_object([]) do |l, arr|
       puts "Fetching stats for #{l[:home][:name]} - #{l[:away][:name]}..."
 
       unless l[:home][:pitcher_id] && l[:away][:pitcher_id]
@@ -66,73 +72,92 @@ class FantasyDataHandler < BaseHandler
         puts "#{l[:home][:pitcher_name]} vs #{l[:away][:pitcher_name]}"
       end
 
-      #home_stats = player_stats(l[:home][:pitcher_id])
-      home_nodes = pitcher_stats(l[:home][:pitcher_id])
-      away_nodes = pitcher_stats(l[:away][:pitcher_id])
+      home_row = pitcher_statcast(l[:home][:pitcher_id])
+      away_row = pitcher_statcast(l[:away][:pitcher_id])
 
-      home_pitcher_era       = extract_pitcher_stat(home_nodes, 'xERA')
-      away_pitcher_era       = extract_pitcher_stat(away_nodes, 'xERA')
-      home_pitcher_k_rate    = extract_pitcher_stat(home_nodes, 'K %') / 100.0
-      away_pitcher_k_rate    = extract_pitcher_stat(away_nodes, 'K %') / 100.0
-      home_pitcher_bb_rate   = extract_pitcher_stat(home_nodes, 'BB %') / 100.0
-      away_pitcher_bb_rate   = extract_pitcher_stat(away_nodes, 'BB %') / 100.0
-      home_pitcher_hard_hit  = extract_pitcher_stat(home_nodes, 'Hard Hit%') / 100.0
-      away_pitcher_hard_hit  = extract_pitcher_stat(away_nodes, 'Hard Hit%') / 100.0
-      home_pitcher_barrel    = extract_pitcher_stat(home_nodes, 'Barrel %') / 100.0
-      away_pitcher_barrel    = extract_pitcher_stat(away_nodes, 'Barrel %') / 100.0
-      home_pitcher_whiff     = extract_pitcher_stat(home_nodes, 'Whiff %') / 100.0
-      away_pitcher_whiff     = extract_pitcher_stat(away_nodes, 'Whiff %') / 100.0
-      home_pitcher_xwoba     = extract_pitcher_stat(home_nodes, 'xwOBA')
-      away_pitcher_xwoba     = extract_pitcher_stat(away_nodes, 'xwOBA')
+      home_pitcher_era      = statcast_val(home_row, 'xera')
+      away_pitcher_era      = statcast_val(away_row, 'xera')
+      home_pitcher_k_rate   = statcast_val(home_row, 'k_percent') / 100.0
+      away_pitcher_k_rate   = statcast_val(away_row, 'k_percent') / 100.0
+      home_pitcher_bb_rate  = statcast_val(home_row, 'bb_percent') / 100.0
+      away_pitcher_bb_rate  = statcast_val(away_row, 'bb_percent') / 100.0
+      home_pitcher_hard_hit = statcast_val(home_row, 'hard_hit_percent') / 100.0
+      away_pitcher_hard_hit = statcast_val(away_row, 'hard_hit_percent') / 100.0
+      home_pitcher_barrel   = statcast_val(home_row, 'barrel_batted_rate') / 100.0
+      away_pitcher_barrel   = statcast_val(away_row, 'barrel_batted_rate') / 100.0
+      home_pitcher_whiff    = statcast_val(home_row, 'whiff_percent') / 100.0
+      away_pitcher_whiff    = statcast_val(away_row, 'whiff_percent') / 100.0
+      home_pitcher_xwoba    = statcast_val(home_row, 'est_woba')
+      away_pitcher_xwoba    = statcast_val(away_row, 'est_woba')
 
-      puts "Warning!!! #{l[:home][:pitcher_name]} has no ERA" if home_pitcher_era&.zero?
-      puts "Warning!!! #{l[:away][:pitcher_name]} has no ERA" if away_pitcher_era&.zero?
+      puts "Warning!!! #{l[:home][:pitcher_name]} has no ERA" if home_pitcher_era.zero?
+      puts "Warning!!! #{l[:away][:pitcher_name]} has no ERA" if away_pitcher_era.zero?
 
-      arr <<
-        {
-          home_team: l[:home][:name],
-          away_team: l[:away][:name],
-          home_pitcher: {
-            era:          home_pitcher_era,
-            k_rate:       home_pitcher_k_rate,
-            bb_rate:      home_pitcher_bb_rate,
-            hard_hit_pct: home_pitcher_hard_hit,
-            barrel_pct:   home_pitcher_barrel,
-            whiff_pct:    home_pitcher_whiff,
-            xwoba:        home_pitcher_xwoba,
-            name:         l[:home][:pitcher_name],
-            era_warning:  home_pitcher_era&.zero?
-          },
-          away_pitcher: {
-            era:          away_pitcher_era,
-            k_rate:       away_pitcher_k_rate,
-            bb_rate:      away_pitcher_bb_rate,
-            hard_hit_pct: away_pitcher_hard_hit,
-            barrel_pct:   away_pitcher_barrel,
-            whiff_pct:    away_pitcher_whiff,
-            xwoba:        away_pitcher_xwoba,
-            name:         l[:away][:pitcher_name],
-            era_warning:  away_pitcher_era&.zero?
-          },
-          home_avg_rbi: l[:home][:player_ids].map { |rb| s = player_stats(rb); s&.children.to_a[11]&.text.to_f.then { |v| g = s&.children.to_a[3]&.text.to_f; g&.positive? ? v / g : nil } }.compact.select { |x| x.finite? && x > 0 && x < 1.5 },
-          away_avg_rbi: l[:away][:player_ids].map { |rb| s = player_stats(rb); s&.children.to_a[11]&.text.to_f.then { |v| g = s&.children.to_a[3]&.text.to_f; g&.positive? ? v / g : nil } }.compact.select { |x| x.finite? && x > 0 && x < 1.5 }
-        }
+      arr << {
+        home_team: l[:home][:name],
+        away_team: l[:away][:name],
+        home_pitcher: {
+          era:          home_pitcher_era,
+          k_rate:       home_pitcher_k_rate,
+          bb_rate:      home_pitcher_bb_rate,
+          hard_hit_pct: home_pitcher_hard_hit,
+          barrel_pct:   home_pitcher_barrel,
+          whiff_pct:    home_pitcher_whiff,
+          xwoba:        home_pitcher_xwoba,
+          name:         l[:home][:pitcher_name],
+          era_warning:  home_pitcher_era.zero?
+        },
+        away_pitcher: {
+          era:          away_pitcher_era,
+          k_rate:       away_pitcher_k_rate,
+          bb_rate:      away_pitcher_bb_rate,
+          hard_hit_pct: away_pitcher_hard_hit,
+          barrel_pct:   away_pitcher_barrel,
+          whiff_pct:    away_pitcher_whiff,
+          xwoba:        away_pitcher_xwoba,
+          name:         l[:away][:pitcher_name],
+          era_warning:  away_pitcher_era.zero?
+        },
+        home_avg_rbi: l[:home][:player_ids].map { |rb| s = player_stats(rb); s&.children.to_a[11]&.text.to_f.then { |v| g = s&.children.to_a[3]&.text.to_f; g&.positive? ? v / g : nil } }.compact.select { |x| x.finite? && x > 0 && x < 1.5 },
+        away_avg_rbi: l[:away][:player_ids].map { |rb| s = player_stats(rb); s&.children.to_a[11]&.text.to_f.then { |v| g = s&.children.to_a[3]&.text.to_f; g&.positive? ? v / g : nil } }.compact.select { |x| x.finite? && x > 0 && x < 1.5 }
+      }
     end
-    selenium_driver.quit
-    res
+  end
+
+  # Fetches all pitcher statcast metrics in one CSV call — no Selenium needed
+  def statcast_leaderboard
+    @statcast_leaderboard ||= begin
+      url = "https://baseballsavant.mlb.com/leaderboard/statcast?type=pitcher&year=#{@proposal_date.year}&position=&team=&min=0&csv=true"
+      puts "Fetching statcast leaderboard..."
+      response = HTTParty.get(url, timeout: 30, headers: { 'User-Agent' => 'Mozilla/5.0' })
+      rows = CSV.parse(response.body, headers: true)
+      puts "Leaderboard: #{rows.length} pitchers, columns: #{rows.headers.first(12).join(', ')}"
+      rows.each_with_object({}) { |row, h| h[row['player_id'].to_s] = row }
+    rescue => e
+      puts "Failed to fetch statcast leaderboard: #{e.class} — #{e.message}"
+      {}
+    end
+  end
+
+  def pitcher_statcast(player_id)
+    row = statcast_leaderboard[player_id.to_s]
+    puts "  Statcast lookup #{player_id}: #{row ? 'found' : 'NOT FOUND'}" unless row
+    row
+  end
+
+  def statcast_val(row, key)
+    return 0.0 unless row && row[key]
+    row[key].to_f
   end
 
   def player_stats(player_id)
-    @cached_stats[player_id] || begin
+    @batter_stats_cache[player_id] ||= begin
       d = HTTParty.get("https://fantasydata.com/mlb/a-b-fantasy/#{player_id}", timeout: 120)
-      @cached_stats[player_id] =
-        #HTTParty.post("https://fantasydata.com/MLB_Player/PlayerSeasonStats?sort=&page=1&pageSize=50&group=&filter=&playerid=#{player_id}&season=2024&scope=1", timeout: 120)
-        Nokogiri::HTML(d.body).xpath("//*[@class='d-inline-block']")[1]
-          &.children&.[](1)
-          &.children&.[](7)
-          &.children&.select{|x| x&.children&.first&.children&.first&.text == @proposal_date.year.to_s}
-          &.first
-        @cached_stats[player_id]
+      Nokogiri::HTML(d.body).xpath("//*[@class='d-inline-block']")[1]
+        &.children&.[](1)
+        &.children&.[](7)
+        &.children&.select{|x| x&.children&.first&.children&.first&.text == @proposal_date.year.to_s}
+        &.first
     end
   end
 
@@ -149,33 +174,13 @@ class FantasyDataHandler < BaseHandler
       options.args << '--no-first-run'
       options.args << '--disable-background-networking'
       options.args << '--disable-sync'
-      options.args << '--js-flags=--max-old-space-size=128'
       options.binary = ENV['CHROME_BIN'] if ENV['CHROME_BIN']
       Selenium::WebDriver.for(:chrome, options: options)
     end
   end
 
-  def pitcher_stats(player_id)
-    @cached_stats[player_id] || begin
-      selenium_driver.navigate.to player_stat_url(player_id)
-      wait = Selenium::WebDriver::Wait.new(timeout: 30)
-      wait.until { selenium_driver.find_element(id: "percentile-slider-viz").attribute("innerHTML").include?("xERA") }
-      elements = selenium_driver.find_element(id: "percentile-slider-viz").attribute("innerHTML")
-      @cached_stats[player_id] = Nokogiri::XML(elements).xpath("//text")
-    rescue => e
-      puts "pitcher_stats failed for #{player_id}: #{e.class} — #{e.message}"
-      @cached_stats[player_id] = []
-    ensure
-      return @cached_stats[player_id]
-    end
-  end
-
   def games_url
     "https://fantasydata.com/mlb/daily-lineups?date=#{@proposal_date.to_s}"
-  end
-
-  def player_stat_url(player_id)
-    "https://baseballsavant.mlb.com/savant-player/#{player_id}?stats=statcast-r-pitching-mlb"
   end
 
   def savant_lineups
@@ -208,5 +213,4 @@ class FantasyDataHandler < BaseHandler
   def savant_games_url
     "https://baseballsavant.mlb.com/schedule?date=#{@proposal_date.to_s}"
   end
-
 end
