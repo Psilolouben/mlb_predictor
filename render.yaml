@@ -5,7 +5,7 @@ services:
     dockerfilePath: ./Dockerfile
     plan: starter
     envVars:
-      - key: GMAIL_APP_PASSWORD
+      - key: SENDGRID_API_KEY
         sync: false
       - key: RUN_TOKEN
         sync: false

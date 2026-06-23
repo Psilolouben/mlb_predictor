@@ -6,7 +6,6 @@ require 'date'
 require 'json'
 require 'csv'
 require 'nokogiri'
-require 'net/smtp'
 
 Dir["./handlers/*.rb"].each {|file| require file }
 
@@ -258,30 +257,33 @@ def find_game_by_pitcher(games, home_pitcher, away_pitcher)
 end
 
 def send_proposals_email(body)
-  password = ENV['GMAIL_APP_PASSWORD']
-  unless password
-    puts "GMAIL_APP_PASSWORD env var not set — skipping email"
+  api_key = ENV['SENDGRID_API_KEY']
+  unless api_key
+    puts "SENDGRID_API_KEY not set — skipping email"
     return
   end
 
   date_str = et_today.strftime('%Y-%m-%d')
-  message = <<~MSG
-    From: MLB Predictor <#{GMAIL_ADDRESS}>
-    To: #{EMAIL_RECIPIENTS.join(', ')}
-    Subject: Bet proposals #{date_str}
-    Content-Type: text/plain; charset=UTF-8
+  response = HTTParty.post(
+    'https://api.sendgrid.com/v3/mail/send',
+    headers: {
+      'Authorization' => "Bearer #{api_key}",
+      'Content-Type'  => 'application/json'
+    },
+    body: {
+      personalizations: [{ to: EMAIL_RECIPIENTS.map { |e| { email: e } } }],
+      from:    { email: GMAIL_ADDRESS, name: 'MLB Predictor' },
+      subject: "Bet proposals #{date_str}",
+      content: [{ type: 'text/plain', value: body }]
+    }.to_json,
+    timeout: 15
+  )
 
-    #{body}
-  MSG
-
-  smtp = Net::SMTP.new('smtp.gmail.com', 465)
-  smtp.enable_tls
-  smtp.open_timeout = 15
-  smtp.read_timeout = 15
-  smtp.start('localhost', GMAIL_ADDRESS, password, :login) do |s|
-    s.send_message(message, GMAIL_ADDRESS, EMAIL_RECIPIENTS)
+  if response.success?
+    puts "Email sent to #{EMAIL_RECIPIENTS.join(', ')}"
+  else
+    puts "Email failed: #{response.code} — #{response.body}"
   end
-  puts "Email sent to #{EMAIL_RECIPIENTS.join(', ')}"
 rescue => e
   puts "Email failed: #{e.message}"
 end

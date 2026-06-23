@@ -13,5 +13,4 @@ gem 'prime'
 gem 'bigdecimal'
 gem 'mutex_m'
 gem 'nokogiri'
-gem 'net-smtp'
 
