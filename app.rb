@@ -274,8 +274,10 @@ def send_proposals_email(body)
     #{body}
   MSG
 
-  smtp = Net::SMTP.new('smtp.gmail.com', 587)
-  smtp.enable_starttls
+  smtp = Net::SMTP.new('smtp.gmail.com', 465)
+  smtp.enable_tls
+  smtp.open_timeout = 15
+  smtp.read_timeout = 15
   smtp.start('localhost', GMAIL_ADDRESS, password, :login) do |s|
     s.send_message(message, GMAIL_ADDRESS, EMAIL_RECIPIENTS)
   end
