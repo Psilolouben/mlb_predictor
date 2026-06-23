@@ -2,10 +2,22 @@ require_relative './base_handler.rb'
 
 class FantasyDataHandler < BaseHandler
 
+  LEAGUE_AVG_RBI_PER_GAME = 0.50  # fallback if we can't fetch batter stats
+
   def stats
     @batter_stats_cache = {}
+    all_lineups = lineups
 
-    lineups.each_with_object([]) do |l, arr|
+    # Pre-fetch all batter stats in parallel (thread pool of 20)
+    all_ids = all_lineups.flat_map { |l| l[:home][:player_ids] + l[:away][:player_ids] }.uniq
+    puts "Pre-fetching stats for #{all_ids.length} batters in parallel..."
+    mutex = Mutex.new
+    all_ids.each_slice(20) do |batch|
+      batch.map { |id| Thread.new { r = fetch_player_stat(id); mutex.synchronize { @batter_stats_cache[id] = r } } }.each(&:join)
+    end
+    puts "Batter pre-fetch done."
+
+    all_lineups.each_with_object([]) do |l, arr|
       puts "Fetching stats for #{l[:home][:name]} - #{l[:away][:name]}..."
 
       unless l[:home][:pitcher_id] && l[:away][:pitcher_id]
@@ -55,22 +67,21 @@ class FantasyDataHandler < BaseHandler
           name:         l[:away][:pitcher_name],
           era_warning:  away_pitcher_era.zero?
         },
-        home_avg_rbi: l[:home][:player_ids].map { |rb|
-          s = player_stats(rb)
-          s&.children.to_a[11]&.text.to_f.then { |v|
-            g = s&.children.to_a[3]&.text.to_f
-            g&.positive? ? v / g : nil
-          }
-        }.compact.select { |x| x.finite? && x > 0 && x < 1.5 },
-        away_avg_rbi: l[:away][:player_ids].map { |rb|
-          s = player_stats(rb)
-          s&.children.to_a[11]&.text.to_f.then { |v|
-            g = s&.children.to_a[3]&.text.to_f
-            g&.positive? ? v / g : nil
-          }
-        }.compact.select { |x| x.finite? && x > 0 && x < 1.5 }
+        home_avg_rbi: rbi_list(l[:home][:player_ids]),
+        away_avg_rbi: rbi_list(l[:away][:player_ids])
       }
     end
+  end
+
+  def rbi_list(player_ids)
+    values = player_ids.map { |id|
+      s = @batter_stats_cache[id]
+      s&.children.to_a[11]&.text.to_f.then { |v|
+        g = s&.children.to_a[3]&.text.to_f
+        g&.positive? ? v / g : nil
+      }
+    }.compact.select { |x| x.finite? && x > 0 && x < 1.5 }
+    values.length >= 3 ? values : Array.new(9, LEAGUE_AVG_RBI_PER_GAME)
   end
 
   # Fetches the daily lineup page via plain HTTP — no Selenium needed, page is SSR
@@ -131,18 +142,16 @@ class FantasyDataHandler < BaseHandler
     end.compact
   end
 
-  def player_stats(player_id)
-    @batter_stats_cache[player_id] ||= begin
-      d = HTTParty.get("https://fantasydata.com/mlb/a-b-fantasy/#{player_id}", timeout: 30)
-      Nokogiri::HTML(d.body).xpath("//*[@class='d-inline-block']")[1]
-        &.children&.[](1)
-        &.children&.[](7)
-        &.children&.select { |x| x&.children&.first&.children&.first&.text == @proposal_date.year.to_s }
-        &.first
-    rescue => e
-      puts "  player_stats failed for #{player_id}: #{e.message}"
-      nil
-    end
+  def fetch_player_stat(player_id)
+    d = HTTParty.get("https://fantasydata.com/mlb/a-b-fantasy/#{player_id}", timeout: 10)
+    Nokogiri::HTML(d.body).xpath("//*[@class='d-inline-block']")[1]
+      &.children&.[](1)
+      &.children&.[](7)
+      &.children&.select { |x| x&.children&.first&.children&.first&.text == @proposal_date.year.to_s }
+      &.first
+  rescue => e
+    puts "  player_stat #{player_id} failed: #{e.message.split("\n").first}"
+    nil
   end
 
   def savant_lineups
