@@ -22,6 +22,7 @@ GMAIL_ADDRESS = 'marky.rigas@gmail.com'.freeze
 EMAIL_RECIPIENTS = [GMAIL_ADDRESS].freeze
 FunctionsFramework.http "main" do |request|
   return [200, {}, ["OK"]] if request.request_method == "HEAD"
+  return [200, {}, ["OK"]] if request.path == "/health"
   return evaluate_model if request.params['action'] == 'evaluate'
 
   handler_class = request.params['handler'] ?
