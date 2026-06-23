@@ -53,8 +53,7 @@ FunctionsFramework.http "main" do |request|
           # Pre-create RNG procs once per game — avoids 5000x object allocations
           rngs = {
             home_era: Distribution::Normal.rng(s[:home_pitcher][:era]),
-            away_era: Distribution::Normal.rng(s[:away_pitcher][:era]),
-            batter:   Distribution::Poisson.rng(FantasyDataHandler::LEAGUE_AVG_RBI_PER_GAME)
+            away_era: Distribution::Normal.rng(s[:away_pitcher][:era])
           }
 
           puts "  Simulating #{s[:away_team]} @ #{s[:home_team]}..."
@@ -122,8 +121,8 @@ def simulate_match(match, rngs)
   away_era_scale = (away_blended_era / LEAGUE_AVG_ERA) * (1 + (away_barrel - LEAGUE_AVG_BARREL) * 2)
   home_era_scale = (home_blended_era / LEAGUE_AVG_ERA) * (1 + (home_barrel - LEAGUE_AVG_BARREL) * 2)
 
-  home_runs = match[:home_avg_rbi].sum { rngs[:batter].call }
-  away_runs = match[:away_avg_rbi].sum { rngs[:batter].call }
+  home_runs = match[:home_avg_rbi].sum { Distribution::Poisson.rng(_1) }
+  away_runs = match[:away_avg_rbi].sum { Distribution::Poisson.rng(_1) }
 
   {
     home_team:    match[:home_team],
