@@ -2,20 +2,10 @@ require_relative './base_handler.rb'
 
 class FantasyDataHandler < BaseHandler
 
-  LEAGUE_AVG_RBI_PER_GAME = 0.50  # fallback if we can't fetch batter stats
+  LEAGUE_AVG_RBI_PER_GAME = 0.50
 
   def stats
-    @batter_stats_cache = {}
     all_lineups = lineups
-
-    # Pre-fetch all batter stats in parallel (thread pool of 20)
-    all_ids = all_lineups.flat_map { |l| l[:home][:player_ids] + l[:away][:player_ids] }.uniq
-    puts "Pre-fetching stats for #{all_ids.length} batters in parallel..."
-    mutex = Mutex.new
-    all_ids.each_slice(20) do |batch|
-      batch.map { |id| Thread.new { r = fetch_player_stat(id); mutex.synchronize { @batter_stats_cache[id] = r } } }.each(&:join)
-    end
-    puts "Batter pre-fetch done."
 
     all_lineups.each_with_object([]) do |l, arr|
       puts "Fetching stats for #{l[:home][:name]} - #{l[:away][:name]}..."
@@ -67,21 +57,10 @@ class FantasyDataHandler < BaseHandler
           name:         l[:away][:pitcher_name],
           era_warning:  away_pitcher_era.zero?
         },
-        home_avg_rbi: rbi_list(l[:home][:player_ids]),
-        away_avg_rbi: rbi_list(l[:away][:player_ids])
+        home_avg_rbi: Array.new(9, LEAGUE_AVG_RBI_PER_GAME),
+        away_avg_rbi: Array.new(9, LEAGUE_AVG_RBI_PER_GAME)
       }
     end
-  end
-
-  def rbi_list(player_ids)
-    values = player_ids.map { |id|
-      s = @batter_stats_cache[id]
-      s&.children.to_a[11]&.text.to_f.then { |v|
-        g = s&.children.to_a[3]&.text.to_f
-        g&.positive? ? v / g : nil
-      }
-    }.compact.select { |x| x.finite? && x > 0 && x < 1.5 }
-    values.length >= 3 ? values : Array.new(9, LEAGUE_AVG_RBI_PER_GAME)
   end
 
   # Fetches the daily lineup page via plain HTTP — no Selenium needed, page is SSR
@@ -99,18 +78,6 @@ class FantasyDataHandler < BaseHandler
     puts "Found #{blocks.length} lineup blocks from fantasydata.com"
 
     blocks.map do |m|
-      home_players = m.children[3].children.map do |c|
-        next if c.children.empty?
-        c.children[3].nil? ? nil : c.children[3].attributes['href']&.value&.split('/')&.last
-      end.compact
-      home_players.delete_at(0)
-
-      away_players = m.children[1].children.map do |c|
-        next if c.children.empty?
-        c.children[3].nil? ? nil : c.children[3].attributes['href']&.value&.split('/')&.last
-      end.compact
-      away_players.delete_at(0)
-
       team_text = m.parent.at_css('.info div').xpath('text()').first.text.strip
       home_team = team_text.split('@').last.gsub(/[[:space:]]/, '')
       away_team = team_text.split('@').first.gsub(/[[:space:]]/, '')
@@ -129,29 +96,15 @@ class FantasyDataHandler < BaseHandler
         home: {
           name: home_team,
           pitcher_id:   home_pitcher_id,
-          pitcher_name: home_pitcher_name,
-          player_ids:   home_players
+          pitcher_name: home_pitcher_name
         },
         away: {
           name: away_team,
           pitcher_id:   away_pitcher_id,
-          pitcher_name: away_pitcher_name,
-          player_ids:   away_players
+          pitcher_name: away_pitcher_name
         }
       }
     end.compact
-  end
-
-  def fetch_player_stat(player_id)
-    d = HTTParty.get("https://fantasydata.com/mlb/a-b-fantasy/#{player_id}", timeout: 10)
-    Nokogiri::HTML(d.body).xpath("//*[@class='d-inline-block']")[1]
-      &.children&.[](1)
-      &.children&.[](7)
-      &.children&.select { |x| x&.children&.first&.children&.first&.text == @proposal_date.year.to_s }
-      &.first
-  rescue => e
-    puts "  player_stat #{player_id} failed: #{e.message.split("\n").first}"
-    nil
   end
 
   def savant_lineups

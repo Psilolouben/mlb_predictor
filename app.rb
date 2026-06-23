@@ -20,9 +20,16 @@ LEAGUE_AVG_XWOBA    = 0.315  # ~.315 xwOBA is MLB average
 WALK_RUN_VALUE      = 0.33   # linear-weight run expectancy of a walk
 GMAIL_ADDRESS = 'marky.rigas@gmail.com'.freeze
 EMAIL_RECIPIENTS = [GMAIL_ADDRESS].freeze
+RUN_TOKEN = ENV.fetch('RUN_TOKEN', nil)
+
 FunctionsFramework.http "main" do |request|
   return [200, {}, ["OK"]] if request.request_method == "HEAD"
   return [200, {}, ["OK"]] if request.path == "/health"
+
+  if RUN_TOKEN && request.params['token'] != RUN_TOKEN
+    return [403, {}, ["Forbidden"]]
+  end
+
   return evaluate_model if request.params['action'] == 'evaluate'
 
   handler_class = request.params['handler'] ?

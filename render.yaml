@@ -7,3 +7,5 @@ services:
     envVars:
       - key: GMAIL_APP_PASSWORD
         sync: false
+      - key: RUN_TOKEN
+        sync: false
