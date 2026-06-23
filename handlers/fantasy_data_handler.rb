@@ -1,58 +1,38 @@
 require_relative './base_handler.rb'
 
 class FantasyDataHandler < BaseHandler
-  MLB_API = 'https://statsapi.mlb.com/api/v1'.freeze
 
   def stats
     @batter_stats_cache = {}
 
-    schedule_games.each_with_object([]) do |g, arr|
-      home            = g.dig('teams', 'home')
-      away            = g.dig('teams', 'away')
-      home_team       = home.dig('team', 'name')
-      away_team       = away.dig('team', 'name')
-      home_pitcher_id = home.dig('probablePitcher', 'id')
-      away_pitcher_id = away.dig('probablePitcher', 'id')
-      home_pitcher_nm = home.dig('probablePitcher', 'fullName')
-      away_pitcher_nm = away.dig('probablePitcher', 'fullName')
-      home_lineup     = g.dig('lineups', 'homePlayers') || []
-      away_lineup     = g.dig('lineups', 'awayPlayers') || []
+    lineups.each_with_object([]) do |l, arr|
+      puts "Fetching stats for #{l[:home][:name]} - #{l[:away][:name]}..."
 
-      puts "Fetching stats for #{home_team} - #{away_team}..."
-
-      if home_lineup.empty? || away_lineup.empty?
-        puts "  Lineup not posted yet, skipping"
-        next
-      end
-
-      unless home_pitcher_id && away_pitcher_id
+      unless l[:home][:pitcher_id] && l[:away][:pitcher_id]
         puts "  Pitcher not found, skipping"
         next
       end
 
-      puts "  #{home_pitcher_nm} vs #{away_pitcher_nm}"
+      puts "  #{l[:home][:pitcher_name]} vs #{l[:away][:pitcher_name]}"
 
-      home_row = pitcher_statcast(home_pitcher_id)
-      away_row = pitcher_statcast(away_pitcher_id)
+      home_row = pitcher_statcast(l[:home][:pitcher_id])
+      away_row = pitcher_statcast(l[:away][:pitcher_id])
 
-      home_pitcher_era  = statcast_val(home_row, :expected, 'xera')
-      away_pitcher_era  = statcast_val(away_row, :expected, 'xera')
-      home_pitcher_xwoba = statcast_val(home_row, :expected, 'est_woba')
-      away_pitcher_xwoba = statcast_val(away_row, :expected, 'est_woba')
-      home_pitcher_barrel = statcast_val(home_row, :batted_ball, 'brl_pa') / 100.0
-      away_pitcher_barrel = statcast_val(away_row, :batted_ball, 'brl_pa') / 100.0
-      home_pitcher_hard_hit = statcast_val(home_row, :batted_ball, 'ev95percent') / 100.0
-      away_pitcher_hard_hit = statcast_val(away_row, :batted_ball, 'ev95percent') / 100.0
+      home_pitcher_era      = statcast_val(home_row, :expected,    'xera')
+      away_pitcher_era      = statcast_val(away_row, :expected,    'xera')
+      home_pitcher_xwoba    = statcast_val(home_row, :expected,    'est_woba')
+      away_pitcher_xwoba    = statcast_val(away_row, :expected,    'est_woba')
+      home_pitcher_barrel   = statcast_val(home_row, :batted_ball, 'brl_pa')       / 100.0
+      away_pitcher_barrel   = statcast_val(away_row, :batted_ball, 'brl_pa')       / 100.0
+      home_pitcher_hard_hit = statcast_val(home_row, :batted_ball, 'ev95percent')  / 100.0
+      away_pitcher_hard_hit = statcast_val(away_row, :batted_ball, 'ev95percent')  / 100.0
 
-      puts "  Warning!!! #{home_pitcher_nm} has no xERA" if home_pitcher_era.zero?
-      puts "  Warning!!! #{away_pitcher_nm} has no xERA" if away_pitcher_era.zero?
-
-      home_batter_ids = home_lineup.map { |p| p['id'] }
-      away_batter_ids = away_lineup.map { |p| p['id'] }
+      puts "  Warning!!! #{l[:home][:pitcher_name]} has no xERA" if home_pitcher_era.zero?
+      puts "  Warning!!! #{l[:away][:pitcher_name]} has no xERA" if away_pitcher_era.zero?
 
       arr << {
-        home_team: home_team,
-        away_team: away_team,
+        home_team: l[:home][:name],
+        away_team: l[:away][:name],
         home_pitcher: {
           era:          home_pitcher_era,
           k_rate:       0.0,
@@ -61,7 +41,7 @@ class FantasyDataHandler < BaseHandler
           barrel_pct:   home_pitcher_barrel,
           whiff_pct:    0.0,
           xwoba:        home_pitcher_xwoba,
-          name:         home_pitcher_nm,
+          name:         l[:home][:pitcher_name],
           era_warning:  home_pitcher_era.zero?
         },
         away_pitcher: {
@@ -72,41 +52,122 @@ class FantasyDataHandler < BaseHandler
           barrel_pct:   away_pitcher_barrel,
           whiff_pct:    0.0,
           xwoba:        away_pitcher_xwoba,
-          name:         away_pitcher_nm,
+          name:         l[:away][:pitcher_name],
           era_warning:  away_pitcher_era.zero?
         },
-        home_avg_rbi: home_batter_ids.filter_map { |id| batter_rbi_per_game(id) },
-        away_avg_rbi: away_batter_ids.filter_map { |id| batter_rbi_per_game(id) }
+        home_avg_rbi: l[:home][:player_ids].map { |rb|
+          s = player_stats(rb)
+          s&.children.to_a[11]&.text.to_f.then { |v|
+            g = s&.children.to_a[3]&.text.to_f
+            g&.positive? ? v / g : nil
+          }
+        }.compact.select { |x| x.finite? && x > 0 && x < 1.5 },
+        away_avg_rbi: l[:away][:player_ids].map { |rb|
+          s = player_stats(rb)
+          s&.children.to_a[11]&.text.to_f.then { |v|
+            g = s&.children.to_a[3]&.text.to_f
+            g&.positive? ? v / g : nil
+          }
+        }.compact.select { |x| x.finite? && x > 0 && x < 1.5 }
       }
     end
   end
 
-  def schedule_games
-    url = "#{MLB_API}/schedule?sportId=1&date=#{@proposal_date}&hydrate=lineups,probablePitcher"
-    puts "Fetching schedule from MLB API..."
-    response = HTTParty.get(url, timeout: 30)
-    games = response.dig('dates', 0, 'games') || []
-    puts "#{games.length} games found"
-    games
-  rescue => e
-    puts "Failed to fetch schedule: #{e.class} — #{e.message}"
-    []
+  # Fetches the daily lineup page via plain HTTP — no Selenium needed, page is SSR
+  def data
+    response = HTTParty.get(
+      games_url,
+      headers: { 'User-Agent' => 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' },
+      timeout: 30
+    )
+    Nokogiri::HTML(response.body).xpath("//*[@class='lineup']")
   end
 
-  def batter_rbi_per_game(player_id)
+  def lineups
+    blocks = data
+    puts "Found #{blocks.length} lineup blocks from fantasydata.com"
+
+    blocks.map do |m|
+      home_players = m.children[3].children.map do |c|
+        next if c.children.empty?
+        c.children[3].nil? ? nil : c.children[3].attributes['href']&.value&.split('/')&.last
+      end.compact
+      home_players.delete_at(0)
+
+      away_players = m.children[1].children.map do |c|
+        next if c.children.empty?
+        c.children[3].nil? ? nil : c.children[3].attributes['href']&.value&.split('/')&.last
+      end.compact
+      away_players.delete_at(0)
+
+      team_text = m.parent.at_css('.info div').xpath('text()').first.text.strip
+      home_team = team_text.split('@').last.gsub(/[[:space:]]/, '')
+      away_team = team_text.split('@').first.gsub(/[[:space:]]/, '')
+
+      match = savant_lineups.find { |x| x[:home][:name].split(' ').join.include?(home_team) }
+      next unless match
+
+      home_match_is_home = match[:home][:name].split(' ').join.include?(home_team)
+      home_pitcher_id   = home_match_is_home ? match[:home][:pitcher_id]   : match[:away][:pitcher_id]
+      home_pitcher_name = home_match_is_home ? match[:home][:pitcher_name] : match[:away][:pitcher_name]
+      away_pitcher_id   = home_match_is_home ? match[:away][:pitcher_id]   : match[:home][:pitcher_id]
+      away_pitcher_name = home_match_is_home ? match[:away][:pitcher_name] : match[:home][:pitcher_name]
+
+      {
+        id: 'koko',
+        home: {
+          name: home_team,
+          pitcher_id:   home_pitcher_id,
+          pitcher_name: home_pitcher_name,
+          player_ids:   home_players
+        },
+        away: {
+          name: away_team,
+          pitcher_id:   away_pitcher_id,
+          pitcher_name: away_pitcher_name,
+          player_ids:   away_players
+        }
+      }
+    end.compact
+  end
+
+  def player_stats(player_id)
     @batter_stats_cache[player_id] ||= begin
-      url = "#{MLB_API}/people/#{player_id}/stats?stats=season&group=hitting&season=#{@proposal_date.year}"
-      response = HTTParty.get(url, timeout: 15)
-      splits = response.dig('stats', 0, 'splits') || []
-      return nil if splits.empty?
-      stat = splits.first['stat']
-      rbi   = stat['rbi'].to_f
-      games = stat['gamesPlayed'].to_f
-      val = games.positive? ? rbi / games : nil
-      val&.finite? && val > 0 && val < 1.5 ? val : nil
+      d = HTTParty.get("https://fantasydata.com/mlb/a-b-fantasy/#{player_id}", timeout: 30)
+      Nokogiri::HTML(d.body).xpath("//*[@class='d-inline-block']")[1]
+        &.children&.[](1)
+        &.children&.[](7)
+        &.children&.select { |x| x&.children&.first&.children&.first&.text == @proposal_date.year.to_s }
+        &.first
     rescue => e
-      puts "  batter_rbi_per_game failed for #{player_id}: #{e.message}"
+      puts "  player_stats failed for #{player_id}: #{e.message}"
       nil
+    end
+  end
+
+  def savant_lineups
+    @savant_lineups ||= begin
+      response = HTTParty.get(savant_games_url, timeout: 30)
+      games = response.dig('dates', 0, 'games') || []
+      puts "savant_lineups: #{games.length} games from MLB Stats API"
+      games.map do |m|
+        {
+          id: m['gamePk'],
+          home: {
+            name:         m.dig('teams', 'home', 'team', 'name'),
+            pitcher_id:   m.dig('teams', 'home', 'probablePitcher', 'id'),
+            pitcher_name: m.dig('teams', 'home', 'probablePitcher', 'fullName')
+          },
+          away: {
+            name:         m.dig('teams', 'away', 'team', 'name'),
+            pitcher_id:   m.dig('teams', 'away', 'probablePitcher', 'id'),
+            pitcher_name: m.dig('teams', 'away', 'probablePitcher', 'fullName')
+          }
+        }
+      end
+    rescue => e
+      puts "savant_lineups failed: #{e.class} — #{e.message}"
+      []
     end
   end
 
@@ -146,5 +207,13 @@ class FantasyDataHandler < BaseHandler
     row = data[source]
     return 0.0 unless row && row[key]
     row[key].to_f
+  end
+
+  def games_url
+    "https://fantasydata.com/mlb/daily-lineups?date=#{@proposal_date}"
+  end
+
+  def savant_games_url
+    "https://statsapi.mlb.com/api/v1/schedule?sportId=1&date=#{@proposal_date}&hydrate=probablePitcher"
   end
 end
