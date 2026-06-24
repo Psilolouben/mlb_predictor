@@ -18,7 +18,7 @@ LEAGUE_AVG_WHIFF    = 0.245  # ~24.5% whiff rate is MLB average
 LEAGUE_AVG_XWOBA    = 0.315  # ~.315 xwOBA is MLB average
 WALK_RUN_VALUE      = 0.33   # linear-weight run expectancy of a walk
 GMAIL_ADDRESS = 'marky.rigas@gmail.com'.freeze
-EMAIL_RECIPIENTS = [GMAIL_ADDRESS].freeze
+EMAIL_RECIPIENTS = [GMAIL_ADDRESS, 'christos.deliyannis@gmail.com'].freeze
 RUN_TOKEN = ENV.fetch('RUN_TOKEN', nil)
 
 FunctionsFramework.http "main" do |request|
