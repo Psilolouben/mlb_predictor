@@ -68,10 +68,11 @@ FunctionsFramework.http "main" do |request|
     tee.call("  MLB BET PROPOSALS — #{date.strftime("%b %d, %Y")}")
     tee.call("#{"═" * 52}\n")
 
+    tee.call("── WINNER PROPOSALS ─────────────────────────────────\n")
     proposals.each do |x|
       next if x[:home_pitcher][:era_warning] || x[:away_pitcher][:era_warning]
 
-      [[x[:home_team], x[:home], x[:away]], [x[:away_team], x[:away], x[:home]]].each do |team, poss, opp_poss|
+      [[x[:home_team], x[:home], x[:away]], [x[:away_team], x[:away], x[:home]]].each do |team, poss, _|
         next unless poss > 70
 
         is_home     = team == x[:home_team]
@@ -79,17 +80,48 @@ FunctionsFramework.http "main" do |request|
         opp_pitcher = is_home ? x[:away_pitcher][:name] : x[:home_pitcher][:name]
         color       = poss > 85 ? "\e[32m" : "\e[33m"
         bar         = ("█" * (poss / 10).round).ljust(10)
+        matchup     = "#{x[:away_team]} @ #{x[:home_team]}"
 
-        matchup = "#{x[:away_team]} @ #{x[:home_team]}"
         tee.call("#{color}┌#{"─" * 50}┐")
         tee.call("│  %-48s│" % matchup)
         tee.call("│  %-48s│" % "#{team.upcase}  |  #{pitcher} vs #{opp_pitcher}")
         tee.call("│  Win:  #{bar}  #{poss.round(1).to_s.rjust(5)}%#{" " * 23}│")
-        tee.call("│  Runs: O7.5 #{x[:o75].round(1).to_s.rjust(5)}%  O8.5 #{x[:o85].round(1).to_s.rjust(5)}%  O9.5 #{x[:o95].round(1).to_s.rjust(5)}%#{" " * 4}│")
-        tee.call("│  Both scored: %-34s│" % "#{x[:both_scored].round(1)}%")
-        tee.call("│  Avg total runs: %-31s│" % "#{x[:avg_total_runs].round(2)}  (#{x[:most_possible_runs_home]}-#{x[:most_possible_runs_away]} most likely)")
+        tee.call("│  Avg runs: %-38s│" % "#{x[:avg_total_runs].round(2)}  (#{x[:most_possible_runs_home]}-#{x[:most_possible_runs_away]} most likely)")
         tee.call("└#{"─" * 50}┘\n")
       end
+    end
+
+    tee.call("\n── OVER/UNDER PROPOSALS ──────────────────────────────\n")
+    proposals.each do |x|
+      next if x[:home_pitcher][:era_warning] || x[:away_pitcher][:era_warning]
+
+      matchup = "#{x[:away_team]} @ #{x[:home_team]}"
+      pitchers = "#{x[:away_pitcher][:name]} vs #{x[:home_pitcher][:name]}"
+
+      # Find the highest-confidence over line (prefer 9.5 > 8.5 > 7.5)
+      over_line, over_pct = [['9.5', x[:o95]], ['8.5', x[:o85]], ['7.5', x[:o75]]]
+        .find { |_, pct| pct > 80 }
+
+      # Under: invert the lowest line — if o75 < 20% then under 7.5 is >80%
+      under_line, under_pct = [['7.5', 100 - x[:o75]], ['8.5', 100 - x[:o85]], ['9.5', 100 - x[:o95]]]
+        .find { |_, pct| pct > 80 }
+
+      next unless over_line || under_line
+
+      tee.call("\e[36m┌#{"─" * 50}┐")
+      tee.call("│  %-48s│" % matchup)
+      tee.call("│  %-48s│" % pitchers)
+      tee.call("│  Avg total: %-36s│" % "#{x[:avg_total_runs].round(2)} runs  (#{x[:most_possible_runs_home]}-#{x[:most_possible_runs_away]} most likely)")
+      if over_line
+        bar = ("█" * (over_pct / 10).round).ljust(10)
+        tee.call("│  OVER  #{over_line}:  #{bar}  #{over_pct.round(1).to_s.rjust(5)}%#{" " * 18}│")
+      end
+      if under_line
+        bar = ("█" * (under_pct / 10).round).ljust(10)
+        tee.call("│  UNDER #{under_line}:  #{bar}  #{under_pct.round(1).to_s.rjust(5)}%#{" " * 18}│")
+      end
+      tee.call("│  Both teams score: %-29s│" % "#{x[:both_scored].round(1)}%")
+      tee.call("└#{"─" * 50}┘\n")
     end
 
         handler.export_to_csv(proposals)
