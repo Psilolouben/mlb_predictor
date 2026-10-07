@@ -10,12 +10,7 @@ class FantasyDataHandler < BaseHandler
     all_lineups.each_with_object([]) do |l, arr|
       puts "Fetching stats for #{l[:home][:name]} - #{l[:away][:name]}..."
 
-      unless l[:home][:pitcher_id] && l[:away][:pitcher_id]
-        puts "  Pitcher not found, skipping"
-        next
-      end
-
-      puts "  #{l[:home][:pitcher_name]} vs #{l[:away][:pitcher_name]}"
+      puts "  #{l[:home][:pitcher_name] || 'TBD'} vs #{l[:away][:pitcher_name] || 'TBD'}"
 
       home_row = pitcher_statcast(l[:home][:pitcher_id])
       away_row = pitcher_statcast(l[:away][:pitcher_id])
