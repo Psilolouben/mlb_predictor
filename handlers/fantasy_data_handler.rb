@@ -82,14 +82,23 @@ class FantasyDataHandler < BaseHandler
       home_team = team_text.split('@').last.gsub(/[[:space:]]/, '')
       away_team = team_text.split('@').first.gsub(/[[:space:]]/, '')
 
+      # Parse SP names directly from fantasydata.com HTML (always available)
+      fd_home_pitcher_name = sp_name_from_block(m.children[3])
+      fd_away_pitcher_name = sp_name_from_block(m.children[1])
+
       match = savant_lineups.find { |x| x[:home][:name].split(' ').join.include?(home_team) }
       next unless match
 
       home_match_is_home = match[:home][:name].split(' ').join.include?(home_team)
+
+      # Prefer MLB Stats API pitcher (has MLBAM ID); fall back to fantasydata name + CSV name lookup
       home_pitcher_id   = home_match_is_home ? match[:home][:pitcher_id]   : match[:away][:pitcher_id]
-      home_pitcher_name = home_match_is_home ? match[:home][:pitcher_name] : match[:away][:pitcher_name]
+      home_pitcher_name = (home_match_is_home ? match[:home][:pitcher_name] : match[:away][:pitcher_name]) || fd_home_pitcher_name
       away_pitcher_id   = home_match_is_home ? match[:away][:pitcher_id]   : match[:home][:pitcher_id]
-      away_pitcher_name = home_match_is_home ? match[:away][:pitcher_name] : match[:home][:pitcher_name]
+      away_pitcher_name = (home_match_is_home ? match[:away][:pitcher_name] : match[:home][:pitcher_name]) || fd_away_pitcher_name
+
+      home_pitcher_id ||= pitcher_id_by_name(home_pitcher_name)
+      away_pitcher_id ||= pitcher_id_by_name(away_pitcher_name)
 
       {
         id: 'koko',
@@ -105,6 +114,33 @@ class FantasyDataHandler < BaseHandler
         }
       }
     end.compact
+  end
+
+  # Extract SP name from a lineup block's children by parsing the first player href slug
+  def sp_name_from_block(block)
+    block.children.each do |c|
+      next if c.children.empty?
+      href = c.children[3]&.attributes&.dig('href')&.value
+      next unless href&.match?(%r{/mlb/.+-fantasy/\d+})
+      slug = href.split('/').last(2).first          # e.g. "ryan-gasser-fantasy"
+      name = slug.sub(/-fantasy$/, '').split('-').map(&:capitalize).join(' ')
+      return name
+    end
+    nil
+  rescue
+    nil
+  end
+
+  # Look up a pitcher's MLBAM ID from the Savant CSV by first+last name
+  def pitcher_id_by_name(full_name)
+    return nil unless full_name
+    first, *rest = full_name.split(' ')
+    last = rest.join(' ')
+    row = expected_stats_leaderboard.values.find do |r|
+      r['first_name']&.downcase == first&.downcase &&
+        r['last_name']&.downcase == last&.downcase
+    end
+    row&.[]('player_id')&.then { |id| puts "  Name lookup: #{full_name} → #{id}"; id }
   end
 
   def savant_lineups
