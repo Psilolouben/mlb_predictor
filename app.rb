@@ -126,6 +126,8 @@ FunctionsFramework.http "main" do |request|
 
     tee.call("\n── REST OF THE GAMES ─────────────────────────────────\n")
     proposals.each do |x|
+      next if x[:home_pitcher][:era_warning] || x[:away_pitcher][:era_warning]
+
       winner_featured = [x[:home], x[:away]].any? { |p| p > 70 }
       ou_featured = begin
         over_hit  = [x[:o95], x[:o85], x[:o75]].any? { |p| p > 80 }
@@ -138,9 +140,6 @@ FunctionsFramework.http "main" do |request|
       away_pct = x[:away].round(1)
       tee.call("  #{x[:away_team]} @ #{x[:home_team]}")
       tee.call("  #{x[:away_pitcher][:name]} vs #{x[:home_pitcher][:name]}")
-      if x[:home_pitcher][:era_warning] || x[:away_pitcher][:era_warning]
-        tee.call("  ⚠ No Savant xERA — simulation used league average ERA")
-      end
       tee.call("  Win: #{x[:away_team]} #{away_pct}%  |  #{x[:home_team]} #{home_pct}%")
       tee.call("  O/U: O7.5 #{x[:o75].round(1)}%  O8.5 #{x[:o85].round(1)}%  O9.5 #{x[:o95].round(1)}%")
       tee.call("  Avg #{x[:avg_total_runs].round(2)} runs  (#{x[:most_possible_runs_home]}-#{x[:most_possible_runs_away]} most likely)  Both score: #{x[:both_scored].round(1)}%")
